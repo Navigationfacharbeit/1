@@ -8,49 +8,50 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #F7F8FC;
+            background: #0a192f;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
         .toolbar {
-            background: #FAFAFF;
+            background: #112240;
             padding: 12px 16px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             align-items: center;
-            border-bottom: 1px solid #E5E7EB;
+            border-bottom: 1px solid #1e3a5f;
         }
         .btn {
             font-size: 14px;
             font-weight: 600;
             padding: 10px 16px;
-            border: 1px solid #D9D6EF;
+            border: 1px solid #1e3a5f;
             border-radius: 8px;
-            background: #EDEBFF;
-            color: #16223A;
+            background: #1e3a5f;
+            color: #ccd6f6;
             cursor: pointer;
             touch-action: manipulation;
             transition: all 0.15s;
         }
         .btn:active, .btn.active {
-            background: #1A1A1A;
-            color: #fff;
+            background: #64ffda;
+            color: #0a192f;
+            border-color: #64ffda;
         }
         .btn.primary {
-            background: #6B5EFA;
+            background: #0891b2;
             color: #fff;
-            border-color: #6B5EFA;
+            border-color: #0891b2;
         }
         .btn.primary:active {
-            background: #4F43D9;
+            background: #22d3ee;
         }
         .radio-group {
             display: flex;
             gap: 4px;
-            background: #fff;
-            border: 1px solid #E5E7EB;
+            background: #112240;
+            border: 1px solid #1e3a5f;
             border-radius: 8px;
             padding: 4px;
         }
@@ -59,12 +60,13 @@
             border-radius: 6px;
             font-size: 13px;
             font-weight: 600;
+            color: #8892b0;
             cursor: pointer;
             transition: all 0.15s;
         }
         .radio-group input { display: none; }
         .radio-group input:checked + span {
-            background: #6B5EFA;
+            background: #0891b2;
             color: #fff;
             border-radius: 6px;
             padding: 8px 12px;
@@ -74,22 +76,22 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: #fff;
-            border: 1px solid #E5E7EB;
+            background: #112240;
+            border: 1px solid #1e3a5f;
             border-radius: 8px;
             padding: 8px 12px;
         }
-        .density-control label { font-size: 12px; font-weight: 600; color: #16223A; }
+        .density-control label { font-size: 12px; font-weight: 600; color: #ccd6f6; }
         .density-control input[type="range"] { width: 100px; }
         .status {
             margin-left: auto;
             font-size: 13px;
             font-weight: 600;
-            color: #1A1A1A;
-            background: #fff;
+            color: #64ffda;
+            background: #112240;
             padding: 8px 16px;
             border-radius: 8px;
-            border: 1px solid #E5E7EB;
+            border: 1px solid #1e3a5f;
         }
         .canvas-container {
             flex: 1;
@@ -99,9 +101,9 @@
             align-items: center;
         }
         canvas {
-            background: #fff;
+            background: #112240;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             touch-action: none;
             max-width: 100%;
             max-height: 100%;
@@ -110,20 +112,21 @@
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.4);
+            background: rgba(10,25,47,0.9);
             justify-content: center;
             align-items: center;
             z-index: 1000;
         }
         .modal.show { display: flex; }
         .modal-content {
-            background: #fff;
+            background: #112240;
+            border: 1px solid #1e3a5f;
             padding: 24px;
             border-radius: 16px;
             max-width: 90%;
             text-align: center;
         }
-        .modal h3 { margin-bottom: 16px; color: #16223A; }
+        .modal h3 { margin-bottom: 16px; color: #ccd6f6; }
         .weight-buttons {
             display: flex;
             gap: 8px;
@@ -134,17 +137,18 @@
         .weight-btn {
             width: 44px; height: 44px;
             font-size: 16px; font-weight: 600;
-            border: 1px solid #E5E7EB;
+            border: 1px solid #1e3a5f;
             border-radius: 8px;
-            background: #fff;
+            background: #1e3a5f;
+            color: #ccd6f6;
             cursor: pointer;
         }
-        .weight-btn:active { background: #1A1A1A; color: #fff; }
+        .weight-btn:active { background: #64ffda; color: #0a192f; }
         .result-modal {
             max-width: 400px;
         }
-        .result-modal p { margin: 8px 0; font-size: 15px; }
-        .result-modal .path { font-weight: 600; color: #6B5EFA; }
+        .result-modal p { margin: 8px 0; font-size: 15px; color: #8892b0; }
+        .result-modal .path { font-weight: 600; color: #64ffda; }
     </style>
 </head>
 <body>
@@ -565,7 +569,7 @@ function draw() {
         for (let i = 1; i < path.length; i++) {
             ctx.lineTo(nodes[path[i]].x, nodes[path[i]].y);
         }
-        ctx.strokeStyle = '#5CC5A7';
+        ctx.strokeStyle = '#64ffda';
         ctx.lineWidth = 8;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -586,7 +590,7 @@ function draw() {
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = '#D9D6EF';
+        ctx.strokeStyle = '#1e3a5f';
         ctx.lineWidth = 3;
         ctx.stroke();
         
@@ -598,9 +602,9 @@ function draw() {
             const a = edge.accidents[i];
             ctx.beginPath();
             ctx.arc(a.x, a.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#FF9FB3';
+            ctx.fillStyle = '#f87171';
             ctx.fill();
-            ctx.strokeStyle = '#E8758A';
+            ctx.strokeStyle = '#dc2626';
             ctx.lineWidth = 1;
             ctx.stroke();
         }
@@ -610,12 +614,12 @@ function draw() {
         const my = (p1.y + p2.y) / 2;
         ctx.beginPath();
         ctx.ellipse(mx, my, 18, 12, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#F5F3FF';
+        ctx.fillStyle = '#1e3a5f';
         ctx.fill();
-        ctx.strokeStyle = '#D9D6EF';
+        ctx.strokeStyle = '#0891b2';
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = '#16223A';
+        ctx.fillStyle = '#ccd6f6';
         ctx.font = 'bold 11px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -625,20 +629,20 @@ function draw() {
     // Knoten
     for (const [id, pos] of Object.entries(nodes)) {
         const nid = parseInt(id);
-        let fill = '#EDEBFF';
-        if (nid === startNode) fill = '#6B5EFA';
-        else if (nid === goalNode) fill = '#86A8FF';
-        else if (nid === selectedNode) fill = '#FFD93D';
+        let fill = '#1e3a5f';
+        if (nid === startNode) fill = '#0891b2';
+        else if (nid === goalNode) fill = '#22d3ee';
+        else if (nid === selectedNode) fill = '#fbbf24';
         
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 16, 0, Math.PI * 2);
         ctx.fillStyle = fill;
         ctx.fill();
-        ctx.strokeStyle = '#273043';
+        ctx.strokeStyle = '#64ffda';
         ctx.lineWidth = 2;
         ctx.stroke();
         
-        ctx.fillStyle = (nid === startNode || nid === goalNode) ? '#fff' : '#16223A';
+        ctx.fillStyle = '#ccd6f6';
         ctx.font = 'bold 12px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
