@@ -1,65 +1,65 @@
-# Facharbeit – Graphen und Straßennetz
+# Facharbeit – Routen mit Unfalldaten / Graph-Tool
 
-Dieses Repo enthält zwei voneinander unabhängige Python-Skripte:
+Dieses Repository enthält zwei Teile:
 
-- `Graphen.py`: Interaktives Tkinter-Tool zur Visualisierung und Routenberechnung auf einem selbst erstellten Graphen (optional mit Pillow für glatte Darstellung).
-- `Straßennetz.py` (alias `Strassennetz.py`): Routenberechnung auf realen Straßennetzen mit OSMnx, Folium-Karte als HTML-Ausgabe. Nutzt Unfallpunkte aus CSV.
+- `Straßennetz.py`: Erstellt auf Basis von OSM-Daten und Unfalldaten eine Karte mit 3 Routen (schnell/sicher/mix) und speichert sie als HTML.
+- `Graphen.py`: Interaktives Tkinter-Tool zum Experimentieren mit Graphen und Dijkstra.
 
-## Voraussetzungen
+## Nutzung ohne VS Code (allgemein)
 
-- Python 3.10–3.12
-- Abhängigkeiten installieren:
-
-```pwsh
-python -m pip install -r requirements.txt
-```
-
-Hinweis zu Geo-Stack (Geopandas/Shapely/Rtree): Unter Windows/macOS sollten Wheels automatisch installiert werden. Falls Probleme auftreten, bitte aktuelle Python-Version und `pip` verwenden.
-
-## Graphen-Tool starten
+- Python 3.10+ installieren
+- Abhängigkeiten installieren (siehe unten)
+- Skripte aus einem beliebigen Terminal ausführen (PowerShell, CMD, iTerm, etc.)
 
 ```pwsh
+# Windows PowerShell Beispiel (aus dem Repo-Ordner)
+python Straßennetz.py
 python Graphen.py
 ```
 
-Optional ohne Pillow (langsameres Rendering): funktioniert trotzdem.
+## Veröffentlichbare Website (GitHub Pages)
 
-## Straßennetz-Tool starten (CLI)
+`Straßennetz.py` speichert die Karte nach `./docs/index.html`. Wenn du GitHub Pages in den Repository-Einstellungen aktivierst (Branch: `main`, Ordner: `docs/`), ist die Seite überall erreichbar.
 
-Daten vorbereiten:
-- Lege die Unfalldatei (CSV) in `data/Unfallorte2024_LinRef.csv.csv` ab, oder übergib den Pfad via `--acc-file`.
+Schritte:
 
-Beispiel (Standard-Region Siegen, Standard-Start/Ziel):
-
-```pwsh
-python Straßennetz.py --acc-file data/Unfallorte2024_LinRef.csv.csv
-```
-
-Alternative mit ASCII-Dateiname (falls Sonderzeichen-Probleme):
+1) Lokal `python Straßennetz.py` ausführen (erzeugt `docs/index.html`).
+2) Dateien committen und pushen:
 
 ```pwsh
-python Strassennetz.py --acc-file data/Unfallorte2024_LinRef.csv.csv
+git add docs/index.html
+git commit -m "Update map"
+git push origin main
 ```
 
-Weitere Optionen:
+3) Auf GitHub: Settings → Pages → Source: `Deploy from a branch` → Branch: `main` und Folder: `docs/` → Save.
+4) Nach wenigen Minuten ist die Seite unter der angezeigten URL erreichbar.
+
+## Abhängigkeiten installieren
+
+Hinweis: `osmnx`/`geopandas` haben Systemabhängigkeiten. Unter Windows ist `conda`/`mamba` empfohlen. Alternativ funktionieren die vorgefertigten Wheels per `pip` in der Regel.
+
+### Variante A: pip (versuchen)
 
 ```pwsh
-python Straßennetz.py \
-  --place "Siegen, Germany" \
-  --start "Gesamtschule Eiserfeld, Siegen, Germany" \
-  --ziel  "Siegen ZOB, Siegen, Germany" \
-  --acc-file data/Unfallorte2024_LinRef.csv.csv \
-  --output route_eiserfeld_siegen.html
+pip install -r requirements.txt
 ```
 
-Nach dem Lauf findest du die Karte als HTML-Datei (z. B. `route_eiserfeld_siegen.html`). Diese kann in jedem Browser geöffnet werden (auch iPad via Dateien-App oder iCloud Drive).
+### Variante B: conda (empfohlen für Geo-Stack)
 
-## iPad-Hinweise
+```pwsh
+conda create -n facharbeit python=3.10 -y
+conda activate facharbeit
+conda install -c conda-forge osmnx geopandas shapely fiona pyproj rtree -y
+pip install folium networkx scikit-learn pillow
+```
 
-- Ansehen/Bearbeiten: Öffne das Repo auf GitHub (Browser oder App) oder nutze GitHub Codespaces.
-- Ohne Git: Exportiere das Repo als ZIP, entpacke es in der Dateien-App. Öffne HTML-Ergebnisse direkt im mobilen Browser.
-- Editor-Probleme mit `ß`: Nutze `Strassennetz.py` (ASCII-Variante).
+## iPad / überall verwenden
 
-## Lizenz
+- Website: Nach Aktivierung von GitHub Pages kannst du die Karte direkt im Browser aufrufen.
+- Ohne Rechen-Backend: Die Karte ist statisch (aktualisiere sie lokal durch erneutes Ausführen von `Straßennetz.py` und pushen).
+- Interaktiv/Server: Für eine komplette Web-App (mit Eingaben) eignen sich z.B. Streamlit/Render/Railway. Das erfordert aber eine Server-Umgebung mit `osmnx/geopandas`.
 
-Nur zu Schul-/Projektzwecken. Externe Daten (Unfalldatei) bitte separat bereitstellen.
+## Hinweise zu `Graphen.py`
+
+`Graphen.py` ist eine Desktop-GUI (Tkinter). Für eine Web-Variante wäre eine Neuumsetzung mit z.B. Streamlit/Gradio oder eine JS-Portierung nötig. Sag Bescheid, wenn ich dir eine einfache Streamlit-Version bauen soll.
