@@ -3,55 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Straßennetz – Dijkstra (iPad Version)</title>
+    <title>Graphen & Dijkstra – Demo</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a2744;
+            background: #0f172a;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
         .toolbar {
-            background: #243352;
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
             padding: 12px 16px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             align-items: center;
-            border-bottom: 1px solid #3d5a80;
+            border-bottom: 1px solid #334155;
         }
         .btn {
             font-size: 14px;
             font-weight: 600;
             padding: 10px 16px;
-            border: 1px solid #3d5a80;
+            border: 1px solid #334155;
             border-radius: 8px;
-            background: #3d5a80;
-            color: #e2e8f0;
+            background: #1e293b;
+            color: #94a3b8;
             cursor: pointer;
             touch-action: manipulation;
             transition: all 0.15s;
         }
+        .btn:hover {
+            background: #334155;
+            color: #f1f5f9;
+        }
         .btn:active, .btn.active {
-            background: #64ffda;
-            color: #1a2744;
-            border-color: #64ffda;
+            background: #06b6d4;
+            color: #0f172a;
+            border-color: #06b6d4;
         }
         .btn.primary {
-            background: #0891b2;
-            color: #fff;
-            border-color: #0891b2;
+            background: #06b6d4;
+            color: #0f172a;
+            border-color: #06b6d4;
+            font-weight: 700;
         }
-        .btn.primary:active {
+        .btn.primary:hover {
             background: #22d3ee;
         }
         .radio-group {
             display: flex;
             gap: 4px;
-            background: #243352;
-            border: 1px solid #3d5a80;
+            background: #1e293b;
+            border: 1px solid #334155;
             border-radius: 8px;
             padding: 4px;
         }
@@ -60,14 +65,14 @@
             border-radius: 6px;
             font-size: 13px;
             font-weight: 600;
-            color: #8892b0;
             cursor: pointer;
             transition: all 0.15s;
+            color: #94a3b8;
         }
         .radio-group input { display: none; }
         .radio-group input:checked + span {
-            background: #0891b2;
-            color: #fff;
+            background: #06b6d4;
+            color: #0f172a;
             border-radius: 6px;
             padding: 8px 12px;
             margin: -8px -12px;
@@ -76,22 +81,25 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: #243352;
-            border: 1px solid #3d5a80;
+            background: #1e293b;
+            border: 1px solid #334155;
             border-radius: 8px;
             padding: 8px 12px;
         }
-        .density-control label { font-size: 12px; font-weight: 600; color: #e2e8f0; }
-        .density-control input[type="range"] { width: 100px; }
+        .density-control label { font-size: 12px; font-weight: 600; color: #94a3b8; }
+        .density-control input[type="range"] { 
+            width: 100px; 
+            accent-color: #06b6d4;
+        }
         .status {
             margin-left: auto;
             font-size: 13px;
             font-weight: 600;
-            color: #64ffda;
-            background: #243352;
+            color: #06b6d4;
+            background: rgba(6, 182, 212, 0.1);
             padding: 8px 16px;
             border-radius: 8px;
-            border: 1px solid #3d5a80;
+            border: 1px solid rgba(6, 182, 212, 0.3);
         }
         .canvas-container {
             flex: 1;
@@ -101,9 +109,10 @@
             align-items: center;
         }
         canvas {
-            background: #243352;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            background: #1e293b;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+            border: 1px solid #334155;
             touch-action: none;
             max-width: 100%;
             max-height: 100%;
@@ -112,46 +121,77 @@
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(26,39,68,0.9);
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(4px);
             justify-content: center;
             align-items: center;
             z-index: 1000;
         }
         .modal.show { display: flex; }
         .modal-content {
-            background: #243352;
-            border: 1px solid #3d5a80;
-            padding: 24px;
-            border-radius: 16px;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            padding: 28px;
+            border-radius: 20px;
             max-width: 90%;
             text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
         }
-        .modal h3 { margin-bottom: 16px; color: #e2e8f0; }
+        .modal h3 { margin-bottom: 20px; color: #f1f5f9; font-size: 1.2rem; }
         .weight-buttons {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
             justify-content: center;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
         .weight-btn {
-            width: 44px; height: 44px;
-            font-size: 16px; font-weight: 600;
-            border: 1px solid #3d5a80;
-            border-radius: 8px;
-            background: #3d5a80;
-            color: #e2e8f0;
+            width: 48px; height: 48px;
+            font-size: 16px; font-weight: 700;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            background: #1e293b;
+            color: #f1f5f9;
             cursor: pointer;
+            transition: all 0.15s;
         }
-        .weight-btn:active { background: #64ffda; color: #1a2744; }
+        .weight-btn:hover {
+            background: #334155;
+            border-color: #06b6d4;
+        }
+        .weight-btn:active { 
+            background: #06b6d4; 
+            color: #0f172a; 
+        }
         .result-modal {
-            max-width: 400px;
+            max-width: 420px;
         }
-        .result-modal p { margin: 8px 0; font-size: 15px; color: #8892b0; }
-        .result-modal .path { font-weight: 600; color: #64ffda; }
+        .result-modal p { margin: 10px 0; font-size: 15px; color: #94a3b8; }
+        .result-modal .path { font-weight: 700; color: #06b6d4; font-size: 1.1rem; }
+        .back-link {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 16px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 8px;
+            border: 1px solid #334155;
+            transition: all 0.15s;
+            z-index: 100;
+        }
+        .back-link:hover {
+            color: #06b6d4;
+            border-color: #06b6d4;
+        }
     </style>
 </head>
 <body>
+    <a href="index.html" class="back-link">← Zurück</a>
+    
     <div class="toolbar">
         <button class="btn active" id="btn-node">Knoten</button>
         <button class="btn" id="btn-edge">Kante</button>
@@ -201,8 +241,8 @@
 
 <script>
 // Graph-Daten
-let nodes = {};       // {id: {x, y}}
-let edges = {};       // {"u-v": {weight, accidents: [{x,y}]}}
+let nodes = {};
+let edges = {};
 let nodeCounter = 0;
 let mode = "add_node";
 let selectedNode = null;
@@ -227,10 +267,6 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // Mode-Buttons
-const modes = ['node', 'edge', 'accident', 'start', 'goal'];
-modes.forEach(m => {
-    document.getElementById('btn-' + m).addEventListener('click', () => setMode('add_' + m.replace('start','set_start').replace('goal','set_goal')));
-});
 document.getElementById('btn-node').addEventListener('click', () => setMode('add_node'));
 document.getElementById('btn-edge').addEventListener('click', () => setMode('add_edge'));
 document.getElementById('btn-accident').addEventListener('click', () => setMode('add_accident'));
@@ -269,9 +305,7 @@ canvas.addEventListener('touchend', e => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const touch = e.changedTouches[0];
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
-    handleClickAt(x, y);
+    handleClickAt(touch.clientX - rect.left, touch.clientY - rect.top);
 });
 
 function handleClick(e) {
@@ -297,9 +331,7 @@ function handleClickAt(x, y) {
         }
     } else if (mode === 'add_accident') {
         const edge = getEdgeAt(x, y);
-        if (edge) {
-            addAccident(edge, x, y);
-        }
+        if (edge) addAccident(edge, x, y);
     } else if (mode === 'set_start') {
         const n = getNodeAt(x, y);
         if (n !== null) { startNode = n; draw(); }
@@ -311,8 +343,7 @@ function handleClickAt(x, y) {
 
 function getNodeAt(x, y, r = 20) {
     for (const [id, pos] of Object.entries(nodes)) {
-        const dist = Math.hypot(x - pos.x, y - pos.y);
-        if (dist <= r) return parseInt(id);
+        if (Math.hypot(x - pos.x, y - pos.y) <= r) return parseInt(id);
     }
     return null;
 }
@@ -340,13 +371,11 @@ function addAccident(edgeKey, x, y) {
     const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - p1.x)*dx + (y - p1.y)*dy) / len2));
     const px = p1.x + t*dx, py = p1.y + t*dy;
     edges[edgeKey].accidents.push({x: px, y: py});
-    // Reverse edge too
     const rev = v + '-' + u;
     if (edges[rev]) edges[rev].accidents.push({x: px, y: py});
     draw();
 }
 
-// Gewicht-Modal
 function showWeightModal(n1, n2) {
     const modal = document.getElementById('weight-modal');
     const btns = document.getElementById('weight-buttons');
@@ -355,155 +384,107 @@ function showWeightModal(n1, n2) {
         const b = document.createElement('button');
         b.className = 'weight-btn';
         b.textContent = i;
-        b.onclick = () => {
-            addEdge(n1, n2, i);
-            modal.classList.remove('show');
-        };
+        b.onclick = () => { addEdge(n1, n2, i); modal.classList.remove('show'); };
         btns.appendChild(b);
     }
     modal.classList.add('show');
 }
-document.getElementById('weight-cancel').onclick = () => {
-    document.getElementById('weight-modal').classList.remove('show');
-};
+document.getElementById('weight-cancel').onclick = () => document.getElementById('weight-modal').classList.remove('show');
 
 function addEdge(u, v, weight) {
-    const key1 = u + '-' + v;
-    const key2 = v + '-' + u;
-    edges[key1] = {weight, accidents: []};
-    edges[key2] = {weight, accidents: []};
+    edges[u + '-' + v] = {weight, accidents: []};
+    edges[v + '-' + u] = {weight, accidents: []};
     draw();
 }
 
-// Zufallsnetz
 function generateRandom() {
     clearAll();
-    const w = canvas.width, h = canvas.height;
-    const margin = 50;
-    const n = 10;
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
-    const cellW = (w - 2*margin) / cols;
-    const cellH = (h - 2*margin) / rows;
+    const w = canvas.width, h = canvas.height, margin = 50, n = 10;
+    const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+    const cellW = (w - 2*margin) / cols, cellH = (h - 2*margin) / rows;
     
     let i = 0;
     for (let r = 0; r < rows && i < n; r++) {
         for (let c = 0; c < cols && i < n; c++) {
-            const jx = Math.random() * cellW * 0.6 + cellW * 0.2;
-            const jy = Math.random() * cellH * 0.6 + cellH * 0.2;
-            nodes[i] = {x: margin + c*cellW + jx, y: margin + r*cellH + jy};
+            nodes[i] = {
+                x: margin + c*cellW + Math.random()*cellW*0.6 + cellW*0.2,
+                y: margin + r*cellH + Math.random()*cellH*0.6 + cellH*0.2
+            };
             i++;
         }
     }
     nodeCounter = n;
     
-    // Spanning tree (Kruskal)
     const allEdges = [];
     for (let i = 0; i < n; i++) {
         for (let j = i+1; j < n; j++) {
-            const d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
-            allEdges.push({d, u: i, v: j});
+            allEdges.push({d: Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y), u: i, v: j});
         }
     }
     allEdges.sort((a,b) => a.d - b.d);
     
     const parent = Array.from({length: n}, (_, i) => i);
     function find(x) { return parent[x] === x ? x : (parent[x] = find(parent[x])); }
-    function union(a, b) {
-        const ra = find(a), rb = find(b);
-        if (ra === rb) return false;
-        parent[ra] = rb;
-        return true;
-    }
+    function union(a, b) { const ra = find(a), rb = find(b); if (ra === rb) return false; parent[ra] = rb; return true; }
     
     const added = new Set();
     for (const {u, v} of allEdges) {
         if (union(u, v)) {
             const w = Math.floor(Math.random() * 10) + 1;
-            const key1 = u + '-' + v, key2 = v + '-' + u;
             const accs = [];
-            const accN = Math.floor(Math.random() * 8) + 1;
-            for (let k = 0; k < accN; k++) {
+            for (let k = 0; k < Math.floor(Math.random() * 8) + 1; k++) {
                 const t = Math.random();
-                accs.push({
-                    x: nodes[u].x + t*(nodes[v].x - nodes[u].x),
-                    y: nodes[u].y + t*(nodes[v].y - nodes[u].y)
-                });
+                accs.push({x: nodes[u].x + t*(nodes[v].x - nodes[u].x), y: nodes[u].y + t*(nodes[v].y - nodes[u].y)});
             }
-            edges[key1] = {weight: w, accidents: [...accs]};
-            edges[key2] = {weight: w, accidents: [...accs]};
+            edges[u + '-' + v] = {weight: w, accidents: [...accs]};
+            edges[v + '-' + u] = {weight: w, accidents: [...accs]};
             added.add(u + '-' + v);
         }
         if (added.size >= n - 1) break;
     }
     
-    // Extra edges
     let extra = 0;
     for (const {u, v} of allEdges) {
         if (extra >= 4) break;
         const key = Math.min(u,v) + '-' + Math.max(u,v);
         if (added.has(key) || added.has(v + '-' + u)) continue;
         const w = Math.floor(Math.random() * 10) + 1;
-        const key1 = u + '-' + v, key2 = v + '-' + u;
         const accs = [];
-        const accN = Math.floor(Math.random() * 8) + 1;
-        for (let k = 0; k < accN; k++) {
+        for (let k = 0; k < Math.floor(Math.random() * 8) + 1; k++) {
             const t = Math.random();
-            accs.push({
-                x: nodes[u].x + t*(nodes[v].x - nodes[u].x),
-                y: nodes[u].y + t*(nodes[v].y - nodes[u].y)
-            });
+            accs.push({x: nodes[u].x + t*(nodes[v].x - nodes[u].x), y: nodes[u].y + t*(nodes[v].y - nodes[u].y)});
         }
-        edges[key1] = {weight: w, accidents: [...accs]};
-        edges[key2] = {weight: w, accidents: [...accs]};
+        edges[u + '-' + v] = {weight: w, accidents: [...accs]};
+        edges[v + '-' + u] = {weight: w, accidents: [...accs]};
         added.add(key);
         extra++;
     }
-    
     draw();
 }
 
 function clearAll() {
-    nodes = {};
-    edges = {};
-    nodeCounter = 0;
-    selectedNode = null;
-    startNode = null;
-    goalNode = null;
-    path = [];
+    nodes = {}; edges = {}; nodeCounter = 0;
+    selectedNode = null; startNode = null; goalNode = null; path = [];
     draw();
 }
 
-// Dijkstra
 function calculatePath() {
-    if (startNode === null || goalNode === null) {
-        alert('Bitte Start- und Zielpunkt setzen!');
-        return;
-    }
+    if (startNode === null || goalNode === null) { alert('Bitte Start- und Zielpunkt setzen!'); return; }
     
     const routeType = document.querySelector('input[name="route"]:checked').value;
-    
-    // Normierung
     const allW = Object.values(edges).map(e => e.weight);
     const allA = Object.values(edges).map(e => e.accidents.length);
-    const wMax = Math.max(...allW, 1);
-    const aMax = Math.max(...allA, 1);
+    const wMax = Math.max(...allW, 1), aMax = Math.max(...allA, 1);
     
     function costFunc(edge) {
-        const wNorm = edge.weight / wMax;
-        const aNorm = edge.accidents.length / aMax;
+        const wNorm = edge.weight / wMax, aNorm = edge.accidents.length / aMax;
         if (routeType === 'fast') return 0.9 * wNorm + 0.1 * aNorm;
         if (routeType === 'safe') return edge.accidents.length;
         return 0.55 * wNorm + 0.45 * aNorm;
     }
     
-    // Dijkstra
-    const dist = {};
-    const prev = {};
-    for (const id in nodes) {
-        dist[id] = Infinity;
-        prev[id] = null;
-    }
+    const dist = {}, prev = {};
+    for (const id in nodes) { dist[id] = Infinity; prev[id] = null; }
     dist[startNode] = 0;
     
     const pq = [{node: startNode, d: 0}];
@@ -511,72 +492,50 @@ function calculatePath() {
     
     while (pq.length > 0) {
         pq.sort((a, b) => a.d - b.d);
-        const {node: u, d: dU} = pq.shift();
+        const {node: u} = pq.shift();
         if (visited.has(u)) continue;
         visited.add(u);
         if (u === goalNode) break;
         
         for (const key in edges) {
             const [a, b] = key.split('-').map(Number);
-            if (a !== u) continue;
-            if (visited.has(b)) continue;
-            const edge = edges[key];
-            const cost = costFunc(edge);
-            const alt = dist[u] + cost;
-            if (alt < dist[b]) {
-                dist[b] = alt;
-                prev[b] = u;
-                pq.push({node: b, d: alt});
-            }
+            if (a !== u || visited.has(b)) continue;
+            const alt = dist[u] + costFunc(edges[key]);
+            if (alt < dist[b]) { dist[b] = alt; prev[b] = u; pq.push({node: b, d: alt}); }
         }
     }
     
-    // Rekonstruieren
     path = [];
     if (dist[goalNode] !== Infinity) {
         let cur = goalNode;
-        while (cur !== null) {
-            path.unshift(cur);
-            cur = prev[cur];
-        }
+        while (cur !== null) { path.unshift(cur); cur = prev[cur]; }
     }
     
-    // Ergebnis anzeigen
     const titles = {fast: 'Schnellste Route', safe: 'Sicherste Route', mix: 'Gemischte Route'};
     document.getElementById('result-title').textContent = titles[routeType];
-    if (path.length > 0) {
-        document.getElementById('result-path').textContent = path.join(' → ');
-        document.getElementById('result-info').textContent = `Kosten: ${dist[goalNode].toFixed(2)}`;
-    } else {
-        document.getElementById('result-path').textContent = 'Kein Pfad gefunden!';
-        document.getElementById('result-info').textContent = '';
-    }
+    document.getElementById('result-path').textContent = path.length > 0 ? path.join(' → ') : 'Kein Pfad gefunden!';
+    document.getElementById('result-info').textContent = path.length > 0 ? `Kosten: ${dist[goalNode].toFixed(2)}` : '';
     document.getElementById('result-modal').classList.add('show');
-    
     draw();
 }
 
-// Zeichnen
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     const drawnEdges = new Set();
     
-    // 1. ZUERST: Pfad zeichnen (unter allem anderen)
+    // Pfad (unten)
     if (path.length > 1) {
         ctx.beginPath();
         ctx.moveTo(nodes[path[0]].x, nodes[path[0]].y);
-        for (let i = 1; i < path.length; i++) {
-            ctx.lineTo(nodes[path[i]].x, nodes[path[i]].y);
-        }
-        ctx.strokeStyle = '#64ffda';
+        for (let i = 1; i < path.length; i++) ctx.lineTo(nodes[path[i]].x, nodes[path[i]].y);
+        ctx.strokeStyle = '#10b981';
         ctx.lineWidth = 8;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
     }
     
-    // 2. Kanten (über dem Pfad)
+    // Kanten
     for (const key in edges) {
         const [u, v] = key.split('-').map(Number);
         const edgeId = Math.min(u, v) + '-' + Math.max(u, v);
@@ -586,15 +545,14 @@ function draw() {
         const p1 = nodes[u], p2 = nodes[v];
         if (!p1 || !p2) continue;
         
-        // Kante
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = '#3d5a80';
+        ctx.strokeStyle = '#475569';
         ctx.lineWidth = 3;
         ctx.stroke();
         
-        // 3. Unfälle (über Kanten)
+        // Unfälle
         const edge = edges[key];
         const showN = Math.max(1, Math.round(density * edge.accidents.length));
         const step = Math.max(1, Math.floor(edge.accidents.length / showN));
@@ -602,24 +560,23 @@ function draw() {
             const a = edge.accidents[i];
             ctx.beginPath();
             ctx.arc(a.x, a.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#f87171';
+            ctx.fillStyle = '#ef4444';
             ctx.fill();
             ctx.strokeStyle = '#dc2626';
             ctx.lineWidth = 1;
             ctx.stroke();
         }
         
-        // 4. Gewicht-Label (ganz oben)
-        const mx = (p1.x + p2.x) / 2;
-        const my = (p1.y + p2.y) / 2;
+        // Gewicht-Label
+        const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
         ctx.beginPath();
         ctx.ellipse(mx, my, 18, 12, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#3d5a80';
+        ctx.fillStyle = '#1e293b';
         ctx.fill();
-        ctx.strokeStyle = '#0891b2;
+        ctx.strokeStyle = '#475569';
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = '#ccd6f6';
+        ctx.fillStyle = '#f1f5f9';
         ctx.font = 'bold 11px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -629,20 +586,20 @@ function draw() {
     // Knoten
     for (const [id, pos] of Object.entries(nodes)) {
         const nid = parseInt(id);
-        let fill = '#3d5a80';
-        if (nid === startNode) fill = '#0891b2';
-        else if (nid === goalNode) fill = '#22d3ee';
-        else if (nid === selectedNode) fill = '#fbbf24;
+        let fill = '#334155', stroke = '#475569';
+        if (nid === startNode) { fill = '#06b6d4'; stroke = '#22d3ee'; }
+        else if (nid === goalNode) { fill = '#10b981'; stroke = '#34d399'; }
+        else if (nid === selectedNode) { fill = '#f59e0b'; stroke = '#fbbf24'; }
         
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 16, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
         ctx.fillStyle = fill;
         ctx.fill();
-        ctx.strokeStyle = '#64ffda';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 3;
         ctx.stroke();
         
-        ctx.fillStyle = '#e2e8f0';
+        ctx.fillStyle = '#fff';
         ctx.font = 'bold 12px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -650,7 +607,6 @@ function draw() {
     }
 }
 
-// Initial
 draw();
 </script>
 </body>
