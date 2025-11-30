@@ -1,624 +1,698 @@
-# ---------------------------------------------------
-# 1. Kartendaten laden (Siegen + Eiserfeld)
-# ---------------------------------------------------
-import osmnx as ox
+import tkinter as tk
+from tkinter import messagebox
+import math
 import heapq
-import folium
-from folium.plugins import MarkerCluster, HeatMap
-import networkx as nx
-import os
-from math import radians, cos, sin, asin, sqrt
-import numpy as np
-from sklearn.linear_model import RidgeCV
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-import re
-# -*- coding: utf-8 -*-
-# Facharbeit: Navigation mit Unfalldaten (Autonomes Fahren)
-
-
-def haversine_meters(lat1, lon1, lat2, lon2):
-    # return distance in meters between two lat/lon points
-    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a))
-    return 6371000 * c
-
-
-def load_graph(place_name="Siegen, Germany"):
-    try:
-        G = ox.graph_from_place(place_name, network_type="drive")
-        return G
-    except Exception as e:
-        raise RuntimeError(f"Graph konnte nicht geladen werden: {e}")
-
-
-G = load_graph("Siegen, Germany")
-
-# Start- und Zielpunkte (lat, lon)
+import random
 try:
-    start_coords = ox.geocode("Gesamtschule Eiserfeld, Siegen, Germany")
+    from PIL import Image, ImageDraw, ImageTk
 except Exception:
-    start_coords = (50.8542, 8.0248)
+    Image = None
+    ImageDraw = None
+    ImageTk = None
 
-try:
-    ziel_coords = ox.geocode("Siegen ZOB, Siegen, Germany")
-except Exception:
-    # fallback to city center coordinates
-    ziel_coords = (50.8748, 8.0243)
+class GraphTool:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Straßennetz – Dijkstra")
+        self.root.geometry("1200x800")
+        self.root.configure(bg="#F7F8FC")
+        
+        # Graph-Daten
+        self.nodes = {}  # {id: (x, y)}
+        self.edges = {}  # {(node1, node2): weight}
+        self.node_counter = 0
+        
+        # Zustände
+        self.mode = "add_node"  # add_node, add_edge, set_start, set_goal
+        self.selected_node = None
+        self.start_node = None
+        self.goal_node = None
+        self.path = []
+        # Auswahl der Routen-Variante: fast | safe | mix
+        self.route_choice = tk.StringVar(value="fast")
+        # Unfalldichte (0.0–1.0): steuert, wie viele Unfallpunkte angezeigt werden
+        self.acc_density = 0.7
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        # Toolbar (hell, schlicht)
+        toolbar = tk.Frame(self.root, bg="#FAFAFF", height=64)
+        toolbar.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
+        
+        button_style = {
+            "font": ("Segoe UI", 10, "bold"),
+            "relief": tk.SOLID,
+            "bd": 1,
+            "padx": 16,
+            "pady": 10,
+            "cursor": "hand2",
+            "bg": "#EDEBFF",
+            "fg": "#16223A",
+            "activebackground": "#DCD8FF",
+            "activeforeground": "#16223A",
+            "highlightthickness": 0
+        }
+        
+        # Buttons in gewünschter Reihenfolge anordnen
+        self.btn_add_node = tk.Button(toolbar, text="Knoten hinzufügen", 
+                                       command=lambda: self.set_mode("add_node"),
+                                       **button_style)
+        self.btn_add_node.pack(side=tk.LEFT, padx=5)
 
-# nearest_nodes erwartet (G, X, Y) = (G, lon, lat) for the point lookup
-start = ox.distance.nearest_nodes(G, start_coords[1], start_coords[0])
-ziel = ox.distance.nearest_nodes(G, ziel_coords[1], ziel_coords[0])
+        self.btn_add_edge = tk.Button(toolbar, text="Kante hinzufügen", 
+                                       command=lambda: self.set_mode("add_edge"),
+                                       **button_style)
+        self.btn_add_edge.pack(side=tk.LEFT, padx=5)
 
-# ---------------------------------------------------
-# 2. Dijkstra-Algorithmus (eigene Implementierung!)
-# ---------------------------------------------------
-def dijkstra(graph, start, ziel):
-    # Initialize distances and previous pointers
-    dist = {node: float('inf') for node in graph.nodes}
-    dist[start] = 0
-    prev = {node: None for node in graph.nodes}
-    pq = [(0, start)]
+        self.btn_add_accident = tk.Button(toolbar, text="Unfallpunkt hinzufügen", 
+            command=lambda: self.set_mode("add_accident"),
+            **button_style)
+        self.btn_add_accident.pack(side=tk.LEFT, padx=5)
 
-    def edge_length(u, v):
-        # Handle MultiDiGraph edges: choose minimal available 'length' or fallback to haversine
-        data = graph.get_edge_data(u, v)
-        if not data:
-            # fallback: compute via node coordinates
-            y1 = graph.nodes[u].get('y')
-            x1 = graph.nodes[u].get('x')
-            y2 = graph.nodes[v].get('y')
-            x2 = graph.nodes[v].get('x')
-            if None in (x1, y1, x2, y2):
-                return 1.0
-            return haversine_meters(y1, x1, y2, x2)
-        # MultiEdge: data is a dict keyed by edge keys
-        if isinstance(data, dict):
-            lengths = []
-            for key, attr in data.items():
-                if isinstance(attr, dict) and 'length' in attr:
-                    lengths.append(attr['length'])
-            if lengths:
-                return min(lengths)
-            # no 'length' found, fallback to node coords
-            return edge_length_fallback(u, v)
-        return 1.0
+        self.btn_set_start = tk.Button(toolbar, text="Startpunkt", 
+                                        command=lambda: self.set_mode("set_start"),
+                                        **button_style)
+        self.btn_set_start.pack(side=tk.LEFT, padx=5)
 
-    def edge_length_fallback(u, v):
-        y1 = graph.nodes[u].get('y')
-        x1 = graph.nodes[u].get('x')
-        y2 = graph.nodes[v].get('y')
-        x2 = graph.nodes[v].get('x')
-        if None in (x1, y1, x2, y2):
-            return 1.0
-        return haversine_meters(y1, x1, y2, x2)
+        self.btn_set_goal = tk.Button(toolbar, text="Zielpunkt", 
+                                       command=lambda: self.set_mode("set_goal"),
+                                       **button_style)
+        self.btn_set_goal.pack(side=tk.LEFT, padx=5)
 
-    visited = set()
-    while pq:
-        aktuelle_dist, u = heapq.heappop(pq)
-        if u in visited:
-            continue
-        visited.add(u)
-        if u == ziel:
-            break
+        # Zufallsnetz erzeugen
+        self.btn_random = tk.Button(toolbar, text="Zufallsnetz", 
+                        command=self.generate_random_graph,
+                        **button_style)
+        self.btn_random.pack(side=tk.LEFT, padx=5)
 
-        for v in graph.neighbors(u):
-            laenge = edge_length(u, v)
-            alt = dist[u] + laenge
-            if alt < dist[v]:
-                dist[v] = alt
-                prev[v] = u
-                heapq.heappush(pq, (alt, v))
+        self.btn_clear = tk.Button(toolbar, text="Zurücksetzen", 
+                                    command=self.clear_all,
+                                    **button_style)
+        self.btn_clear.pack(side=tk.LEFT, padx=5)
 
-    # reconstruct route
-    route = []
-    k = ziel
-    if prev[k] is None and k != start:
-        # no path found
-        return []
-    while k is not None:
-        route.append(k)
-        k = prev[k]
-    return list(reversed(route))
+        # Unfalldichte-Regler
+        density_box = tk.Frame(toolbar, bg="#FFFFFF", relief=tk.SOLID, bd=1, highlightthickness=0)
+        density_box.pack(side=tk.LEFT, padx=10)
+        tk.Label(density_box, text="Unfalldichte", bg="#FFFFFF", fg="#16223A", font=("Segoe UI", 10, "bold")).pack(side=tk.TOP, anchor="w")
+        self.density_scale = tk.Scale(density_box, from_=0, to=100, orient=tk.HORIZONTAL, length=160,
+                          bg="#FFFFFF", highlightthickness=0, troughcolor="#EDEBFF",
+                                      showvalue=False, command=self._on_density_change)
+        self.density_scale.set(int(self.acc_density * 100))
+        self.density_scale.pack(side=tk.TOP)
 
-# ---------------------------------------------------
-# Hilfsfunktionen: Geschwindigkeits-/Zeitabschätzung
-# ---------------------------------------------------
-def _parse_maxspeed_to_kmh(val):
-    if val is None:
+        # Auswahl der Routenart – jede Option in eigenem Kasten
+        rb_kwargs = {"bg": "#FFFFFF", "activebackground": "#FFFFFF", "selectcolor": "#EDEBFF", "font": ("Segoe UI", 10, "bold")}
+        fast_box = tk.Frame(toolbar, bg="#FFFFFF", relief=tk.SOLID, bd=1, highlightthickness=0)
+        fast_box.pack(side=tk.LEFT, padx=6)
+        tk.Radiobutton(fast_box, text="Schnell", variable=self.route_choice, value="fast", **rb_kwargs).pack(side=tk.LEFT, padx=8, pady=6)
+
+        safe_box = tk.Frame(toolbar, bg="#FFFFFF", relief=tk.SOLID, bd=1, highlightthickness=0)
+        safe_box.pack(side=tk.LEFT, padx=6)
+        tk.Radiobutton(safe_box, text="Sicher", variable=self.route_choice, value="safe", **rb_kwargs).pack(side=tk.LEFT, padx=8, pady=6)
+
+        mix_box = tk.Frame(toolbar, bg="#FFFFFF", relief=tk.SOLID, bd=1, highlightthickness=0)
+        mix_box.pack(side=tk.LEFT, padx=6)
+        tk.Radiobutton(mix_box, text="Misch", variable=self.route_choice, value="mix", **rb_kwargs).pack(side=tk.LEFT, padx=8, pady=6)
+
+        # Route berechnen (am Ende)
+        self.btn_calculate = tk.Button(toolbar, text="Route berechnen", 
+                        command=self.calculate_path,
+                        **button_style)
+        self.btn_calculate.config(bg="#6B5EFA", fg="#ffffff", activebackground="#4F43D9", activeforeground="#ffffff")
+        self.btn_calculate.pack(side=tk.LEFT, padx=5)
+
+        # Status-Label
+        self.status_label = tk.Label(toolbar, text="Modus: Knoten hinzufügen", 
+                         font=("Segoe UI", 11, "bold"),
+                         bg="#ffffff", fg="#1A1A1A", padx=20)
+        self.status_label.pack(side=tk.RIGHT)
+        
+        # Canvas in "Card"-Frame mit feiner Kontur
+        canvas_card = tk.Frame(self.root, bg="#FFFFFF", highlightthickness=0)
+        canvas_card.pack(fill=tk.BOTH, expand=True, padx=16, pady=12)
+
+        self.canvas = tk.Canvas(canvas_card, bg="#FFFFFF", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.bind("<Button-1>", self.canvas_click)
+        # Erste Zeichnung nach Layout
+        self.root.after(50, self.draw_graph)
+
+    def _on_density_change(self, val):
+        try:
+            v = float(val) / 100.0
+        except Exception:
+            v = 0.5
+        self.acc_density = max(0.0, min(1.0, v))
+        self.draw_graph()
+
+    def _acc_indices(self, acc_list):
+        m = len(acc_list)
+        if m == 0:
+            return []
+        p = min(1.0, (self.acc_density) * (3.0 / (m + 1)))
+        show_n = 0 if self.acc_density <= 0 else max(1, int(round(p * m)))
+        if show_n <= 0:
+            return []
+        return [min(m - 1, int(k * m / show_n)) for k in range(show_n)]
+        
+    def set_mode(self, mode):
+        self.mode = mode
+        self.selected_node = None
+        
+        # Button-Farben zurücksetzen
+        buttons = {
+            "add_node": (self.btn_add_node, "Knoten hinzufügen"),
+            "add_edge": (self.btn_add_edge, "Kante hinzufügen"),
+            "set_start": (self.btn_set_start, "Startpunkt setzen"),
+            "set_goal": (self.btn_set_goal, "Zielpunkt setzen"),
+            "add_accident": (self.btn_add_accident, "Unfallpunkt hinzufügen")
+        }
+        
+        for btn_mode, (btn, text) in buttons.items():
+            if btn_mode == mode:
+                # Aktiven Button dunkel
+                btn.config(bg="#1A1A1A", fg="#ffffff", relief=tk.SUNKEN)
+                self.status_label.config(text=f"Modus: {text}", fg="#1A1A1A")
+            else:
+                btn.config(bg="#F1F1FC", fg="#1A1A1A", relief=tk.SOLID)
+    
+    def add_node(self, x, y):
+        self.nodes[self.node_counter] = (x, y)
+        self.node_counter += 1
+        self.draw_graph()
+    
+    def add_edge(self, node1, node2):
+        weight = self.pick_weight()
+        if weight is not None:
+            w = int(weight)
+            self.edges[(node1, node2)] = {'weight': w, 'accidents': []}
+            self.edges[(node2, node1)] = {'weight': w, 'accidents': []}  # Bidirektional
+            self.draw_graph()
+
+    def generate_random_graph(self, n_nodes: int = 12, extra_edges: int = 6):
+        """Erzeugt ein kleines verbundenes Zufalls-Straßennetz.
+        - n_nodes: Anzahl Knoten (klein halten)
+        - Jeder Kante bekommt Gewicht 1–10 und 1–10 Unfälle (als Punkte auf der Kante)
+        """
+        # Canvas-Größe ermitteln
+        self.root.update_idletasks()
+        w = max(600, self.canvas.winfo_width() or 800)
+        h = max(400, self.canvas.winfo_height() or 600)
+        margin = 40
+
+        # Reset
+        self.nodes = {}
+        self.edges = {}
+        self.node_counter = 0
+        self.selected_node = None
+        self.start_node = None
+        self.goal_node = None
+        self.path = []
+
+        # Knoten gleichmäßig verteilen (Jitter-Grid statt Haufenbildung)
+        cols = max(2, int(round(n_nodes ** 0.5)))
+        rows = max(2, (n_nodes + cols - 1) // cols)
+        cell_w = max(1, (w - 2 * margin) // cols)
+        cell_h = max(1, (h - 2 * margin) // rows)
+        i = 0
+        for r in range(rows):
+            for c in range(cols):
+                if i >= n_nodes:
+                    break
+                jitter_x = int(0.2 * cell_w) + random.randint(0, max(1, int(0.6 * cell_w)))
+                jitter_y = int(0.2 * cell_h) + random.randint(0, max(1, int(0.6 * cell_h)))
+                x = margin + c * cell_w + min(cell_w - 1, jitter_x)
+                y = margin + r * cell_h + min(cell_h - 1, jitter_y)
+                self.nodes[i] = (x, y)
+                i += 1
+        self.node_counter = n_nodes
+
+        # Alle Kanten mit Distanz vorbereiten
+        all_edges = []  # (dist2, u, v)
+        for i in range(n_nodes):
+            x1, y1 = self.nodes[i]
+            for j in range(i+1, n_nodes):
+                x2, y2 = self.nodes[j]
+                d2 = (x1-x2)**2 + (y1-y2)**2
+                all_edges.append((d2, i, j))
+        all_edges.sort(key=lambda t: t[0])
+
+        # DSU/Union-Find für Verbundenheit
+        parent = list(range(n_nodes))
+        rank = [0]*n_nodes
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+        def union(a,b):
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return False
+            if rank[ra] < rank[rb]:
+                parent[ra] = rb
+            elif rank[rb] < rank[ra]:
+                parent[rb] = ra
+            else:
+                parent[rb] = ra
+                rank[ra] += 1
+            return True
+
+        # Baue ein Spannbaum (Kruskal)
+        undirected_added = set()
+        for d2, u, v in all_edges:
+            if union(u, v):
+                undirected_added.add((min(u,v), max(u,v)))
+                # Kante mit Zufallsgewicht + Unfällen anlegen (beidseitig)
+                w_val = random.randint(1, 10)
+                self.edges[(u, v)] = {'weight': w_val, 'accidents': []}
+                self.edges[(v, u)] = {'weight': w_val, 'accidents': []}
+                # Unfälle generieren (1–10 Punkte auf der Kante)
+                acc_n = random.randint(1, 10)
+                x1, y1 = self.nodes[u]; x2, y2 = self.nodes[v]
+                for _ in range(acc_n):
+                    t = random.random()
+                    px = x1 + t*(x2 - x1)
+                    py = y1 + t*(y2 - y1)
+                    self.edges[(u, v)]['accidents'].append((px, py))
+                    self.edges[(v, u)]['accidents'].append((px, py))
+            if len(undirected_added) == n_nodes - 1:
+                break
+
+        # Zusätzliche Kanten für Dichte (ohne Kreuzungen)
+        added_extra = 0
+        for d2, u, v in all_edges:
+            if added_extra >= extra_edges:
+                break
+            key = (min(u,v), max(u,v))
+            if key in undirected_added:
+                continue
+            # Neue Kante nur, wenn sie bestehende nicht schneidet
+            if self._edge_would_cross(u, v, undirected_added):
+                continue
+            undirected_added.add(key)
+            w_val = random.randint(1, 10)
+            self.edges[(u, v)] = {'weight': w_val, 'accidents': []}
+            self.edges[(v, u)] = {'weight': w_val, 'accidents': []}
+            acc_n = random.randint(1, 10)
+            x1, y1 = self.nodes[u]; x2, y2 = self.nodes[v]
+            for _ in range(acc_n):
+                t = random.random()
+                px = x1 + t*(x2 - x1)
+                py = y1 + t*(y2 - y1)
+                self.edges[(u, v)]['accidents'].append((px, py))
+                self.edges[(v, u)]['accidents'].append((px, py))
+            added_extra += 1
+
+        self.status_label.config(text="Modus: Zufallsnetz erzeugt – Start/Ziel wählen")
+        self.draw_graph()
+
+    def add_accident_to_edge(self, node1, node2, x, y):
+        # Unfallpunkt exakt auf die Linie projizieren
+        x1, y1 = self.nodes[node1]
+        x2, y2 = self.nodes[node2]
+        dx, dy = x2 - x1, y2 - y1
+        if dx == dy == 0:
+            px, py = x1, y1
+        else:
+            t = max(0, min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)))
+            px, py = x1 + t * dx, y1 + t * dy
+        if (node1, node2) in self.edges:
+            self.edges[(node1, node2)]['accidents'].append((px, py))
+        if (node2, node1) in self.edges:
+            self.edges[(node2, node1)]['accidents'].append((px, py))
+        self.draw_graph()
+
+    # Geometrie-Helfer: Kantenkreuzungen verhindern
+    def _orient(self, ax, ay, bx, by, cx, cy):
+        return (by - ay) * (cx - bx) - (bx - ax) * (cy - by)
+
+    def _on_segment(self, ax, ay, bx, by, cx, cy):
+        return min(ax, bx) <= cx <= max(ax, bx) and min(ay, by) <= cy <= max(ay, by)
+
+    def _segments_intersect(self, a, b, c, d):
+        ax, ay = a; bx, by = b; cx, cy = c; dx, dy = d
+        o1 = self._orient(ax, ay, bx, by, cx, cy)
+        o2 = self._orient(ax, ay, bx, by, dx, dy)
+        o3 = self._orient(cx, cy, dx, dy, ax, ay)
+        o4 = self._orient(cx, cy, dx, dy, bx, by)
+        if (o1 > 0 and o2 < 0 or o1 < 0 and o2 > 0) and (o3 > 0 and o4 < 0 or o3 < 0 and o4 > 0):
+            return True
+        if o1 == 0 and self._on_segment(ax, ay, bx, by, cx, cy):
+            return True
+        if o2 == 0 and self._on_segment(ax, ay, bx, by, dx, dy):
+            return True
+        if o3 == 0 and self._on_segment(cx, cy, dx, dy, ax, ay):
+            return True
+        if o4 == 0 and self._on_segment(cx, cy, dx, dy, bx, by):
+            return True
+        return False
+
+    def _edge_would_cross(self, u, v, undirected_edges):
+        x1, y1 = self.nodes[u]; x2, y2 = self.nodes[v]
+        A = (x1, y1); B = (x2, y2)
+        for (a, b) in undirected_edges:
+            if u in (a, b) or v in (a, b):
+                continue
+            xa, ya = self.nodes[a]; xb, yb = self.nodes[b]
+            C = (xa, ya); D = (xb, yb)
+            if self._segments_intersect(A, B, C, D):
+                return True
+        return False
+
+    def pick_weight(self):
+        """Öffnet einen minimalistischen Dialog mit 1–10 als Klickleiste."""
+        top = tk.Toplevel(self.root)
+        top.title("Kantengewicht wählen")
+        top.configure(bg="#ffffff")
+        top.transient(self.root)
+        top.grab_set()
+
+        # Layout
+        container = tk.Frame(top, bg="#ffffff")
+        container.pack(padx=16, pady=16)
+
+        title = tk.Label(container, text="Gewicht auswählen", bg="#ffffff", fg="#111827", font=("Segoe UI", 11, "bold"))
+        title.pack(anchor="w", pady=(0, 8))
+
+        bar = tk.Frame(container, bg="#ffffff", highlightthickness=1, highlightbackground="#e5e7eb")
+        bar.pack(fill=tk.X)
+
+        selected = {"value": None}
+
+        def choose(v):
+            selected["value"] = v
+            top.destroy()
+
+        for i in range(1, 11):
+            b = tk.Button(bar, text=str(i), width=3, pady=8, bg="#ffffff", fg="#111827", relief=tk.SOLID, bd=1,
+                          activebackground="#111827", activeforeground="#ffffff",
+                          command=lambda v=i: choose(v))
+            b.grid(row=0, column=i-1, padx=(0 if i == 1 else 1), pady=1, sticky="nsew")
+            bar.grid_columnconfigure(i-1, weight=1)
+
+        # Abbrechen
+        actions = tk.Frame(container, bg="#ffffff")
+        actions.pack(fill=tk.X, pady=(12, 0))
+        cancel = tk.Button(actions, text="Abbrechen", bg="#ffffff", fg="#111827", relief=tk.SOLID, bd=1, padx=12, pady=6,
+                           command=top.destroy)
+        cancel.pack(side=tk.RIGHT)
+
+        # Zentrieren
+        top.update_idletasks()
+        w, h = top.winfo_width(), top.winfo_height()
+        rx = self.root.winfo_rootx()
+        ry = self.root.winfo_rooty()
+        rw = self.root.winfo_width()
+        rh = self.root.winfo_height()
+        x = rx + (rw - w) // 2
+        y = ry + (rh - h) // 2
+        top.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+        top.bind("<Escape>", lambda _: top.destroy())
+        top.wait_window()
+        return selected["value"]
+    
+    def get_node_at(self, x, y, radius=18):
+        for node_id, (nx, ny) in self.nodes.items():
+            dist = math.sqrt((x - nx)**2 + (y - ny)**2)
+            if dist <= radius:
+                return node_id
         return None
-    # handle lists/tuples
-    if isinstance(val, (list, tuple)):
-        # get all numeric candidates, take max
-        numbers = []
-        for v in val:
-            kmh = _parse_maxspeed_to_kmh(v)
-            if kmh:
-                numbers.append(kmh)
-        return max(numbers) if numbers else None
-    # handle strings like '50', '50 mph', '30;50', '30-50'
-    if isinstance(val, str):
-        s = val.lower()
-        # detect mph
-        is_mph = 'mph' in s
-        nums = re.findall(r"\d+", s)
-        if not nums:
-            return None
-        kmh = float(max(nums))
-        if is_mph:
-            kmh *= 1.60934
-        return kmh
-    # numeric
-    if isinstance(val, (int, float)):
-        return float(val)
-    return None
+    
+    def highlight_node(self, node_id):
+        x, y = self.nodes[node_id]
+        # Highlight-Ring in Startfarbe (statt Zielviolett)
+        self.canvas.create_oval(x-25, y-25, x+25, y+25,
+                                 outline="#7D3692", width=3, tags="highlight")
+    
+    def draw_graph(self):
+        # Double-Buffered Rendering mit Pillow für glatte Kanten/Kreise
+        self.canvas.delete("all")
 
-def _default_speed_for_highway(h):
-    if isinstance(h, (list, tuple)) and h:
-        h = h[0]
-    h = (str(h).lower() if h is not None else 'unclassified')
-    defaults = {
-        'motorway': 120.0,
-        'trunk': 100.0,
-        'primary': 70.0,
-        'secondary': 60.0,
-        'tertiary': 50.0,
-        'unclassified': 40.0,
-        'residential': 30.0,
-        'service': 20.0,
-        'living_street': 10.0,
-        'track': 20.0,
-        'path': 5.0
-    }
-    return defaults.get(h, 40.0)
+        w = max(1, self.canvas.winfo_width())
+        h = max(1, self.canvas.winfo_height())
+        SCALE = 2
 
-def _edge_speed_kmh(attr, fallback_highway=None):
-    # Try explicit maxspeed
-    ms = attr.get('maxspeed') if isinstance(attr, dict) else None
-    kmh = _parse_maxspeed_to_kmh(ms)
-    if kmh is not None and kmh > 0:
-        return max(5.0, min(kmh, 130.0))
-    # Use highway default
-    hw = attr.get('highway') if isinstance(attr, dict) else fallback_highway
-    return _default_speed_for_highway(hw)
+        if Image is None:
+            # Fallback ohne Pillow
+            self._draw_graph_fallback()
+            return
 
-def estimate_route_time_and_distance(graph, node_list):
-    total_len_m = 0.0
-    total_sec = 0.0
-    for u, v in zip(node_list[:-1], node_list[1:]):
-        data = graph.get_edge_data(u, v)
-        best_attr = None
-        best_len = None
-        if data and isinstance(data, dict):
-            for k, attr in data.items():
-                if not isinstance(attr, dict):
+        img = Image.new("RGB", (w * SCALE, h * SCALE), "#FFFFFF")
+        dr = ImageDraw.Draw(img)
+
+        col_edge = "#D9D6EF"   # zartes Violettgrau
+        col_path = "#5CC5A7"   # freundliches Grünblau
+        col_outline = "#273043"
+        r_node = 15
+
+        # Pfad
+        if self.path:
+            for i in range(len(self.path) - 1):
+                x1, y1 = self.nodes[self.path[i]]
+                x2, y2 = self.nodes[self.path[i + 1]]
+                dr.line([(x1 * SCALE, y1 * SCALE), (x2 * SCALE, y2 * SCALE)], fill=col_path, width=5 * SCALE)
+
+        # Kanten und Label-Container sammeln
+        label_boxes = []  # (x,y,text)
+        for (node1, node2), data in self.edges.items():
+            if node1 < node2:
+                x1, y1 = self.nodes[node1]
+                x2, y2 = self.nodes[node2]
+                dr.line([(x1 * SCALE, y1 * SCALE), (x2 * SCALE, y2 * SCALE)], fill=col_edge, width=2 * SCALE)
+                # Unfallpunkte (gedünnt) zeichnen
+                acc_list = data['accidents']
+                for idx in self._acc_indices(acc_list):
+                    ax, ay = acc_list[idx]
+                    dr.ellipse([(ax - 6) * SCALE, (ay - 6) * SCALE, (ax + 6) * SCALE, (ay + 6) * SCALE], fill="#FF9FB3", outline=None)
+                mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+                # Runde Label-Box im Hintergrund
+                box_w, box_h, rad = 36, 22, 10
+                x0 = (mid_x - box_w / 2) * SCALE
+                y0 = (mid_y - box_h / 2) * SCALE
+                x1b = (mid_x + box_w / 2) * SCALE
+                y1b = (mid_y + box_h / 2) * SCALE
+                dr.rounded_rectangle([x0, y0, x1b, y1b], radius=rad * SCALE, fill="#F5F3FF", outline="#D9D6EF", width=1 * SCALE)
+                label_boxes.append((mid_x, mid_y, str(int(data['weight']))) )
+
+        # Knoten
+        for node_id, (x, y) in self.nodes.items():
+            base = "#EDEBFF"
+            if node_id == self.start_node:
+                base = "#6B5EFA"
+            elif node_id == self.goal_node:
+                base = "#86A8FF"
+
+            x0 = (x - r_node) * SCALE
+            y0 = (y - r_node) * SCALE
+            x1c = (x + r_node) * SCALE
+            y1c = (y + r_node) * SCALE
+            dr.ellipse([x0, y0, x1c, y1c], fill=base, outline=col_outline, width=1 * SCALE)
+
+        # Downsample für Anti-Aliasing
+        img_small = img.resize((w, h), Image.LANCZOS)
+        self._imgtk = ImageTk.PhotoImage(img_small)
+        self.canvas.create_image(0, 0, anchor="nw", image=self._imgtk)
+
+        # Texte als Overlay (Canvas für gute Schrift)
+        for node_id, (x, y) in self.nodes.items():
+            txt_color = "#ffffff" if node_id in (self.start_node, self.goal_node) else "#16223A"
+            self.canvas.create_text(x, y, text=str(node_id), fill=txt_color, font=("Segoe UI", 10, "bold"))
+
+        for (mx, my, txt) in label_boxes:
+            self.canvas.create_text(mx, my, text=txt, fill="#16223A", font=("Segoe UI", 9, "bold"))
+
+    def _draw_graph_fallback(self):
+        """Fallback ohne Pillow (keine Glättung)."""
+        # Pfad
+        if self.path:
+            for i in range(len(self.path) - 1):
+                x1, y1 = self.nodes[self.path[i]]
+                x2, y2 = self.nodes[self.path[i + 1]]
+                self.canvas.create_line(x1, y1, x2, y2, fill="#796C61", width=5)
+
+        for (node1, node2), data in self.edges.items():
+            if node1 < node2:
+                x1, y1 = self.nodes[node1]
+                x2, y2 = self.nodes[node2]
+                self.canvas.create_line(x1, y1, x2, y2, fill="#D9D6EF", width=2)
+                acc_list = data['accidents']
+                for idx in self._acc_indices(acc_list):
+                    ax, ay = acc_list[idx]
+                    self.canvas.create_oval(ax-6, ay-6, ax+6, ay+6, fill="#FF9FB3", outline="")
+                mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+                # Ovale (Pill-)Label statt Rechteck
+                self.canvas.create_oval(mid_x-20, mid_y-12, mid_x+20, mid_y+12, fill="#F5F3FF", outline="#D9D6EF")
+                self.canvas.create_text(mid_x, mid_y, text=str(int(data['weight'])), fill="#16223A", font=("Segoe UI", 9, "bold"))
+
+        for node_id, (x, y) in self.nodes.items():
+            base = "#EDEBFF"
+            if node_id == self.start_node:
+                base = "#6B5EFA"
+            elif node_id == self.goal_node:
+                base = "#86A8FF"
+            self.canvas.create_oval(x-15, y-15, x+15, y+15, fill=base, outline="#273043", width=1)
+            txt_color = "#ffffff" if node_id in (self.start_node, self.goal_node) else "#16223A"
+            self.canvas.create_text(x, y, text=str(node_id), fill=txt_color, font=("Segoe UI", 10, "bold"))
+    
+    def calculate_path(self):
+        if self.start_node is None or self.goal_node is None:
+            messagebox.showwarning("Warnung", "Bitte Start- und Zielpunkt festlegen!")
+            return
+
+        def dijkstra(cost_func):
+            distances = {node: float('inf') for node in self.nodes}
+            distances[self.start_node] = 0
+            previous = {node: None for node in self.nodes}
+            pq = [(0, self.start_node)]
+            visited = set()
+            while pq:
+                current_dist, current_node = heapq.heappop(pq)
+                if current_node in visited:
                     continue
-                l = attr.get('length')
-                if l is None:
-                    y1 = graph.nodes[u].get('y'); x1 = graph.nodes[u].get('x')
-                    y2 = graph.nodes[v].get('y'); x2 = graph.nodes[v].get('x')
-                    if None not in (x1, y1, x2, y2):
-                        l = haversine_meters(y1, x1, y2, x2)
-                if l is None:
-                    continue
-                if best_len is None or l < best_len:
-                    best_len = l
-                    best_attr = attr
-        # Fallback if no edge data
-        if best_attr is None:
-            y1 = graph.nodes[u].get('y'); x1 = graph.nodes[u].get('x')
-            y2 = graph.nodes[v].get('y'); x2 = graph.nodes[v].get('x')
-            l = haversine_meters(y1, x1, y2, x2)
-            speed_kmh = 40.0
+                visited.add(current_node)
+                if current_node == self.goal_node:
+                    break
+                for (n1, n2), data in self.edges.items():
+                    neighbor = None
+                    if n1 == current_node:
+                        neighbor = n2
+                    elif n2 == current_node:
+                        neighbor = n1
+                    if neighbor and neighbor not in visited:
+                        cost = cost_func(data)
+                        new_dist = current_dist + cost
+                        if new_dist < distances[neighbor]:
+                            distances[neighbor] = new_dist
+                            previous[neighbor] = current_node
+                            heapq.heappush(pq, (new_dist, neighbor))
+            # Pfad rekonstruieren
+            path = []
+            if distances[self.goal_node] != float('inf'):
+                current = self.goal_node
+                while current is not None:
+                    path.insert(0, current)
+                    current = previous[current]
+            return path, distances[self.goal_node]
+
+        # Kostenfunktionen mit Normierung, damit "Misch" nicht faktisch "Sicher" ist
+        all_weights = [max(1, d['weight']) for d in self.edges.values()] or [1]
+        all_accs = [len(d['accidents']) for d in self.edges.values()] or [0]
+        w_max = max(all_weights) if all_weights else 1
+        a_max = max(all_accs) if all_accs else 1
+        def w_norm(d):
+            return (max(1, d['weight'])) / w_max
+        def a_norm(d):
+            return (len(d['accidents'])) / a_max if a_max > 0 else 0.0
+
+        # Schnell: nahezu nur Länge, minimale Unfall-Tie-Breaker
+        def cost_fast(data):
+            return 0.9 * w_norm(data) + 0.1 * a_norm(data)
+        # Sicher: strikt Unfälle minimieren (exakte Summe), kein Einfluss der Länge
+        def cost_safe(data):
+            return len(data['accidents'])
+        # Misch: echte Balance, nicht zu unfall-lastig
+        def cost_mix(data):
+            return 0.55 * w_norm(data) + 0.45 * a_norm(data)
+
+        path_fast, dist_fast = dijkstra(cost_fast)
+        path_safe, dist_safe = dijkstra(cost_safe)
+        path_mix, dist_mix = dijkstra(cost_mix)
+
+        self.path_fast = path_fast
+        self.path_safe = path_safe
+        self.path_mix = path_mix
+
+        # Nur die ausgewählte Variante anzeigen
+        choice = self.route_choice.get()
+        if choice == "fast":
+            if path_fast:
+                messagebox.showinfo("Route – Schnell", f"Schnellste Route:\n{' → '.join(map(str, path_fast))}\nKosten: {dist_fast:.2f}")
+                self.path = self.path_fast
+            else:
+                messagebox.showinfo("Route – Schnell", "Kein Pfad gefunden!")
+                self.path = []
+        elif choice == "safe":
+            if path_safe:
+                messagebox.showinfo("Route – Sicher", f"Sicherste Route:\n{' → '.join(map(str, path_safe))}\nUnfälle (Summe pro Kante): {dist_safe:.0f}")
+                self.path = self.path_safe
+            else:
+                messagebox.showinfo("Route – Sicher", "Kein Pfad gefunden!")
+                self.path = []
         else:
-            l = best_len if best_len is not None else 1.0
-            speed_kmh = _edge_speed_kmh(best_attr)
-        speed_mps = max(1.0, speed_kmh * 1000.0 / 3600.0)
-        sec = l / speed_mps
-        total_len_m += l
-        total_sec += sec
-    return total_len_m, total_sec
+            if path_mix:
+                messagebox.showinfo("Route – Misch", f"Gemischte Route:\n{' → '.join(map(str, path_mix))}\nKosten: {dist_mix:.2f}")
+                self.path = self.path_mix
+            else:
+                messagebox.showinfo("Route – Misch", "Kein Pfad gefunden!")
+                self.path = []
+        self.draw_graph()
+    
+    def clear_all(self):
+        self.nodes = {}
+        self.edges = {}
+        self.node_counter = 0
+        self.selected_node = None
+        self.start_node = None
+        self.goal_node = None
+        self.path = []
+        self.draw_graph()
 
-def _fmt_time_seconds(sec):
-    if sec < 30:
-        return "< 1 min"
-    m = int(round(sec / 60.0))
-    return f"{m} min"
+    def get_edge_at(self, x, y, tolerance=10):
+        for (node1, node2), data in self.edges.items():
+            x1, y1 = self.nodes[node1]
+            x2, y2 = self.nodes[node2]
+            dx, dy = x2 - x1, y2 - y1
+            if dx == dy == 0:
+                continue
+            t = max(0, min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)))
+            px, py = x1 + t * dx, y1 + t * dy
+            dist = math.hypot(x - px, y - py)
+            if dist <= tolerance:
+                return (node1, node2)
+        return None
 
-def _fmt_dist_m(m):
-    km = m / 1000.0
-    return f"{km:.1f} km"
+    def canvas_click(self, event):
+        x, y = event.x, event.y
+        if self.mode == "add_accident":
+            edge = self.get_edge_at(x, y)
+            if edge:
+                self.add_accident_to_edge(*edge, x, y)
+            return
 
-# ---------------------------------------------------
-# 3. Erzeuge Kanten-GeoDataFrame, berechne Unfall-Risiko und Gewichte
-# ---------------------------------------------------
-import pandas as pd
-import geopandas as gpd
-from shapely.geometry import LineString
-
-# Lade Unfalldaten (2024) – nur Siegen/Eiserfeld
-acc_file = r"C:\Users\anton\Documents\GitHub\Facharbeit-NAvigation\unfaelle_siegenwittgenstein.csv\Unfallorte2024_LinRef.csv.csv"
-try:
-    df_acc = pd.read_csv(acc_file, sep=";", decimal=",", low_memory=False)
-except Exception as e:
-    raise RuntimeError(f"Unfalldatei {acc_file} konnte nicht geladen werden: {e}")
-
-df_acc["XGCSWGS84"] = pd.to_numeric(df_acc["XGCSWGS84"], errors="coerce")
-df_acc["YGCSWGS84"] = pd.to_numeric(df_acc["YGCSWGS84"], errors="coerce")
-df_acc = df_acc.dropna(subset=["XGCSWGS84", "YGCSWGS84"])
-
-# Filter: nur Unfälle im Bereich Siegen/Eiserfeld (Bounding Box)
-min_lon, max_lon = 7.98, 8.08
-min_lat, max_lat = 50.82, 50.90
-df_acc = df_acc[(df_acc["XGCSWGS84"] >= min_lon) & (df_acc["XGCSWGS84"] <= max_lon) &
-                (df_acc["YGCSWGS84"] >= min_lat) & (df_acc["YGCSWGS84"] <= max_lat)]
-
-gdf_acc = gpd.GeoDataFrame(df_acc, geometry=gpd.points_from_xy(df_acc["XGCSWGS84"], df_acc["YGCSWGS84"]), crs="EPSG:4326").to_crs(3857)
-
-# Baue Kanten-GeoDataFrame
-rows = []
-for u, v, key, data in G.edges(keys=True, data=True):
-    geom = None
-    if isinstance(data, dict) and "geometry" in data and data["geometry"] is not None:
-        geom = data["geometry"]
-    else:
-        # fallback LineString between node coordinates (lon,lat)
-        y1 = G.nodes[u].get("y")
-        x1 = G.nodes[u].get("x")
-        y2 = G.nodes[v].get("y")
-        x2 = G.nodes[v].get("x")
-        if None in (x1, y1, x2, y2):
-            continue
-        geom = LineString([(x1, y1), (x2, y2)])
-
-    length_m = data.get("length") if isinstance(data, dict) and data.get("length") is not None else haversine_meters(G.nodes[u].get("y"), G.nodes[u].get("x"), G.nodes[v].get("y"), G.nodes[v].get("x"))
-    highway = None
-    if isinstance(data, dict):
-        highway = data.get("highway")
-    rows.append({"u": u, "v": v, "key": key, "length": length_m, "geometry": geom, "highway": highway})
-
-edges_gdf = gpd.GeoDataFrame(rows, crs="EPSG:4326").to_crs(3857)
-
-# Buffer Kanten und zähle Unfälle in 20m Umgebung
-buffers = edges_gdf.copy()
-buffers["geometry"] = buffers.geometry.buffer(20)
-joined = gpd.sjoin(gdf_acc, buffers[["geometry"]], how="left", predicate="within")
-counts = joined.groupby("index_right").size()
-edges_gdf["accidents"] = counts.reindex(edges_gdf.index).fillna(0).astype(int)
-
-# Risiko definieren (Unfälle pro km)
-edges_gdf["risk"] = edges_gdf.apply(lambda r: r["accidents"] / (max(r["length"], 1) / 1000.0), axis=1)
-
-# Straßenklassen-Strafe basierend auf OSM 'highway' Tag
-def highway_penalty_tag(h):
-    if h is None:
-        return 1.2
-    # if list, pick first
-    if isinstance(h, (list, tuple)):
-        h = h[0]
-    mapping = {
-        'motorway': 0.6,
-        'trunk': 0.7,
-        'primary': 0.8,
-        'secondary': 0.9,
-        'tertiary': 1.0,
-        'unclassified': 1.1,
-        'residential': 1.5,
-        'service': 1.6,
-        'living_street': 1.8,
-        'track': 2.0,
-        'path': 2.5,
-        'cycleway': 2.0,
-        'footway': 2.5
-    }
-    return mapping.get(str(h), 1.2)
-
-edges_gdf['road_penalty'] = edges_gdf['highway'].apply(highway_penalty_tag)
-
-# Normalisieren
-max_len = edges_gdf["length"].max() or 1.0
-max_risk = edges_gdf["risk"].max()
-if not max_risk or max_risk <= 0:
-    max_risk = 1.0
-
-edges_gdf["len_norm"] = edges_gdf["length"] / max_len
-edges_gdf["risk_norm"] = edges_gdf["risk"] / max_risk
-
-# Gewichte – leichte ML-basierte Anpassung zur Bewertung von Straßen (bevorzuge Hauptstraßen)
-mix_param = 0.5
-route_pref_strength = 1.0  # reset manual strength; AI model will handle preference
-
-# Zielwert (wie "bevorzugt" ist die Straße), basierend auf OSM 'highway' tag
-def hw_target(h):
-    if h is None:
-        return np.nan
-    if isinstance(h, (list, tuple)):
-        h = h[0]
-    h = str(h).lower()
-    mapping = {
-        'motorway': 1.0,
-        'trunk': 0.95,
-        'primary': 0.9,
-        'secondary': 0.8,
-        'tertiary': 0.6,
-        'unclassified': 0.4,
-        'residential': 0.2,
-        'service': 0.15,
-        'living_street': 0.1,
-        'track': 0.05,
-        'path': 0.0
-    }
-    return mapping.get(h, 0.3)
-
-edges_gdf['hw_target'] = edges_gdf['highway'].apply(hw_target)
-
-# Features: len_norm, risk_norm, accidents, plus highway class encoded
-edges_gdf['hw_code'] = edges_gdf['highway'].apply(lambda h: str(h[0]) if isinstance(h, (list, tuple)) and h else (str(h) if h is not None else 'none'))
-hw_dummies = pd.get_dummies(edges_gdf['hw_code'], prefix='hw')
-X_df = pd.concat([edges_gdf[['len_norm', 'risk_norm', 'accidents']].fillna(0), hw_dummies], axis=1)
-X = X_df.values
-y = edges_gdf['hw_target'].fillna(-1).values
-
-# Train Ridge with CV if enough samples
-mask = y >= 0
-if mask.sum() >= 20:
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X[mask])
-    alphas = [0.1, 1.0, 10.0]
-    model = RidgeCV(alphas=alphas)
-    model.fit(Xs, y[mask])
-    # predict for all
-    Xall = scaler.transform(X)
-    pred = model.predict(Xall)
-    # normalize predictions to 0..1
-    pmin = np.nanmin(pred)
-    pmax = np.nanmax(pred)
-    if pmax - pmin < 1e-6:
-        pref = np.clip(pred, 0.0, 1.0)
-    else:
-        pref = (pred - pmin) / (pmax - pmin)
-else:
-    pref = 1.0 - edges_gdf['risk_norm'].fillna(0).values
-
-# Convert preference to highway_weight factor scaled by route_pref_strength
-pref = np.clip(pref, 0.0, 1.0)
-
-# --- AI route-decision model: predict per-edge probability that it is a 'main/preferred' road ---
-ai_strength = 2.0  # how strongly the AI penalizes non-preferred edges
-try:
-    # prepare features (reuse X_df created above)
-    scaler_ai = StandardScaler().fit(X)
-    Xs_ai = scaler_ai.transform(X)
-    # binary target derived from hw_target (main roads ~1.0)
-    y_bin = (edges_gdf['hw_target'].fillna(0) >= 0.7).astype(int).values
-    # require at least some examples of each class
-    if (y_bin == 1).sum() >= 10 and (y_bin == 0).sum() >= 10:
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-        clf.fit(Xs_ai[mask], y_bin[mask])
-        p_main = clf.predict_proba(Xs_ai)[:, 1]
-    else:
-        # fallback: use continuous pref (from Ridge) as proxy
-        p_main = pref
-except Exception:
-    p_main = pref
-
-# convert to preference probability (p_main in 0..1)
-p_main = np.clip(p_main, 0.0, 1.0)
-edges_gdf['ai_pref'] = p_main
-
-# highway weight from previous Ridge prediction (kept for class-based preference)
-edges_gdf['highway_weight'] = 1.0 + (1.0 - pref) * (1.0 * route_pref_strength)
-
-# Use per-route AI strength so 'safe' can prioritize main roads more
-ai_strengths = {
-    'fast': 1.0,
-    'safe': 4.0,
-    'mix': 2.0
-}
-edges_gdf['ai_weight_fast'] = 1.0 + (1.0 - p_main) * ai_strengths['fast']
-edges_gdf['ai_weight_safe'] = 1.0 + (1.0 - p_main) * ai_strengths['safe']
-edges_gdf['ai_weight_mix'] = 1.0 + (1.0 - p_main) * ai_strengths['mix']
-
-# final weights: include road_penalty and per-route AI weight
-edges_gdf["weight_fast"] = edges_gdf["length"] * edges_gdf["highway_weight"] * edges_gdf["road_penalty"] * edges_gdf["ai_weight_fast"]
-edges_gdf["weight_safe"] = edges_gdf["risk_norm"] * edges_gdf["highway_weight"] * edges_gdf["road_penalty"] * edges_gdf["ai_weight_safe"]
-edges_gdf["weight_mix"] = (edges_gdf["len_norm"] * (1 - mix_param) + edges_gdf["risk_norm"] * mix_param) * edges_gdf["highway_weight"] * edges_gdf["road_penalty"] * edges_gdf["ai_weight_mix"]
-
-# Baue gerichteten Graphen mit minimalen Gewichten pro (u,v)
-H = nx.DiGraph()
-for (u, v), group in edges_gdf.groupby(["u", "v"]):
-    w_fast = group["weight_fast"].min()
-    w_safe = group["weight_safe"].min()
-    w_mix = group["weight_mix"].min()
-    H.add_edge(u, v, weight_fast=w_fast, weight_safe=w_safe, weight_mix=w_mix)
-
-# ---------------------------------------------------
-# 4. Drei Routen berechnen: schnell, sicher, gemischt
-# ---------------------------------------------------
-paths = {}
-try:
-    paths["fast"] = nx.shortest_path(H, source=start, target=ziel, weight="weight_fast")
-except Exception:
-    paths["fast"] = []
-try:
-    paths["safe"] = nx.shortest_path(H, source=start, target=ziel, weight="weight_safe")
-except Exception:
-    paths["safe"] = []
-try:
-    paths["mix"] = nx.shortest_path(H, source=start, target=ziel, weight="weight_mix")
-except Exception:
-    paths["mix"] = []
-
-print("Routen gefunden:", {k: (len(v) if v else 0) for k, v in paths.items()})
-
-# Geschätzte Zeit und Distanz für jede Route berechnen
-label_map = {"fast": "Schnell", "safe": "Sicher", "mix": "Mischroute"}
-route_stats = {}
-for kind, node_list in paths.items():
-    if not node_list:
-        continue
-    dist_m, secs = estimate_route_time_and_distance(G, node_list)
-    route_stats[kind] = {"meters": dist_m, "seconds": secs}
-
-if route_stats:
-    summary = {label_map.get(k, k): f"{_fmt_time_seconds(v['seconds'])}, {_fmt_dist_m(v['meters'])}" for k, v in route_stats.items()}
-    print("Zeit/Distanz (ca.):", summary)
-
-# ---------------------------------------------------
-# 5. Karte zeichnen (keine Zwischenmarker, Routen entlang Straßengeometrie)
-#    + Unfall-Heatmap (für Performance ggf. sampling)
-# ---------------------------------------------------
-color_map = {"fast": "#1f78b4", "safe": "#33a02c", "mix": "#e31a1c"}
-m = folium.Map(location=start_coords, zoom_start=14)
-folium.Marker(start_coords, tooltip="Start: Gesamtschule Eiserfeld", icon=folium.Icon(color="green")).add_to(m)
-folium.Marker(ziel_coords, tooltip="Ziel: Siegen", icon=folium.Icon(color="red")).add_to(m)
-
-# Unfall-Heatmap (sample falls sehr viele Punkte)
-gdf_acc_plot = gdf_acc.to_crs(4326)
-n_points = len(gdf_acc_plot)
-max_points = 5000
-if n_points > max_points:
-    sample = gdf_acc_plot.sample(max_points)
-else:
-    sample = gdf_acc_plot
-heat_data = [[pt.y, pt.x] for pt in sample.geometry]
-HeatMap(heat_data, radius=7, blur=12, name='Unfall-Heatmap').add_to(m)
-
-def route_coords_from_nodes(node_list):
-    coords = []
-    for u, v in zip(node_list[:-1], node_list[1:]):
-        data = G.get_edge_data(u, v)
-        seg_coords = []
-        if data:
-            if isinstance(data, dict):
-                found = False
-                for key, attr in data.items():
-                    geom = attr.get("geometry") if isinstance(attr, dict) else None
-                    if geom is not None:
-                        seg_coords = [(lat, lon) for lon, lat in geom.coords]
-                        found = True
-                        break
-                if not found:
-                    seg_coords = [(G.nodes[u]["y"], G.nodes[u]["x"]), (G.nodes[v]["y"], G.nodes[v]["x"])]
-        else:
-            seg_coords = [(G.nodes[u]["y"], G.nodes[u]["x"]), (G.nodes[v]["y"], G.nodes[v]["x"])]
-
-        if not coords:
-            coords.extend(seg_coords)
-        else:
-            coords.extend(seg_coords[1:])
-    return coords
-
-for kind, node_list in paths.items():
-    if not node_list:
-        continue
-    coords = route_coords_from_nodes(node_list)
-    label = label_map.get(kind, kind)
-    stats = route_stats.get(kind)
-    tip = label if not stats else f"{label} – ca. {_fmt_time_seconds(stats['seconds'])}, {_fmt_dist_m(stats['meters'])}"
-    folium.PolyLine(coords, weight=7, color=color_map.get(kind, "blue"), opacity=0.85, tooltip=tip).add_to(m)
-
-# Layer control
-folium.LayerControl().add_to(m)
-
-# Unfälle als Punkte auf der Karte markieren – nur entlang der Route
-from shapely.geometry import LineString
-from shapely.ops import unary_union
-route_lines = []
-for kind, node_list in paths.items():
-    if not node_list:
-        continue
-    coords = route_coords_from_nodes(node_list)
-    route_lines.append(LineString([(lon, lat) for lat, lon in coords]))
-route_union = unary_union(route_lines)
-# inner buffer ~30m, outer buffer ~100m (in degrees approx)
-inner_buffer = route_union.buffer(0.0003)
-outer_buffer = route_union.buffer(0.0009)
-gdf_acc_plot = gdf_acc.to_crs(4326)
-
-def val_to_yesno(v):
-    if pd.isna(v):
-        return 'Unbekannt'
-    if isinstance(v, str):
-        vv = v.strip().lower()
-        if vv in ('1', 'j', 'ja', 'yes', 'true', 'wahr'):
-            return 'Ja'
-        if vv in ('0', 'n', 'nein', 'no', 'false'):
-            return 'Nein'
-        return v
-    if isinstance(v, (int, float)):
-        return 'Ja' if v == 1 else 'Nein'
-    return str(v)
-
-vehicle_cols = ["IstRad", "IstPKW", "IstFuss", "IstKrad", "IstGkfz", "IstSonstige"]
-
-# accidents exactly on/very near route
-on_route = gdf_acc_plot[gdf_acc_plot.geometry.within(inner_buffer)]
-# accidents near route but not inside inner buffer
-near_route = gdf_acc_plot[gdf_acc_plot.geometry.within(outer_buffer) & (~gdf_acc_plot.geometry.within(inner_buffer))]
-
-def build_popup(acc):
-    lines = []
-    if 'UNFALLART' in acc:
-        lines.append(f"Art: {acc['UNFALLART']}")
-    if 'UNFALLTYP' in acc:
-        lines.append(f"Typ: {acc['UNFALLTYP']}")
-    if 'STRASSE' in acc:
-        lines.append(f"Straße: {acc['STRASSE']}")
-    # only show vehicle types with 'Ja'
-    involved = []
-    for vc in vehicle_cols:
-        if vc in acc.index:
-            val = val_to_yesno(acc[vc])
-            if val == 'Ja':
-                # map column names to nicer German labels
-                label = vc.replace('Ist', '')
-                involved.append(label)
-    if involved:
-        lines.append("Beteiligte: " + ", ".join(involved))
-    # severity / person-related columns
-    severity_cols = [c for c in acc.index if ('PERSON' in c.upper() or 'SCHADEN' in c.upper() or 'VERLET' in c.upper())]
-    for sc in severity_cols:
-        lines.append(f"{sc}: {acc[sc]}")
-    for col in ["LICHTVERH", "WETTER", "MONAT", "WOCHENTAG"]:
-        if col in acc.index:
-            lines.append(f"{col}: {acc[col]}")
-    return f"Unfallpunkt:<br>Lat: {acc['YGCSWGS84']}<br>Lon: {acc['XGCSWGS84']}<br>" + "<br>".join(lines)
-
-for _, acc in on_route.iterrows():
-    popup_text = build_popup(acc)
-    folium.CircleMarker(
-        location=[acc.geometry.y, acc.geometry.x],
-        radius=5,
-        color="black",
-        fill=True,
-        fill_color="orange",
-        fill_opacity=0.95,
-        popup=folium.Popup(popup_text, max_width=350)
-    ).add_to(m)
-
-for _, acc in near_route.iterrows():
-    popup_text = build_popup(acc)
-    folium.CircleMarker(
-        location=[acc.geometry.y, acc.geometry.x],
-        radius=4,
-        color="black",
-        fill=True,
-        fill_color="blue",
-        fill_opacity=0.6,
-        popup=folium.Popup("In Nähe der Route:<br>" + popup_text, max_width=350)
-    ).add_to(m)
-
-# Karte speichern und öffnen
-out_path = os.path.abspath("route_eiserfeld_siegen.html")
-m.save(out_path)
-print(f"Karte gespeichert als {out_path}")
-try:
-    import webbrowser
-    webbrowser.open(f"file://{out_path}")
-    print("Versuche, die Karte im Standardbrowser zu öffnen...")
-except Exception as e:
-    print("Konnte den Browser nicht automatisch öffnen:", e)
+        if event.num == 3:  # Rechtsklick
+            edge = self.get_edge_at(x, y)
+            if edge:
+                self.add_accident_to_edge(*edge, x, y)
+            return
+        
+        if self.mode == "add_node":
+            self.add_node(x, y)
+        elif self.mode == "add_edge":
+            clicked_node = self.get_node_at(x, y)
+            if clicked_node is not None:
+                if self.selected_node is None:
+                    self.selected_node = clicked_node
+                    self.highlight_node(clicked_node)
+                else:
+                    if clicked_node != self.selected_node:
+                        self.add_edge(self.selected_node, clicked_node)
+                    self.selected_node = None
+                    self.draw_graph()
+        elif self.mode == "set_start":
+            clicked_node = self.get_node_at(x, y)
+            if clicked_node is not None:
+                self.start_node = clicked_node
+                self.draw_graph()
+        elif self.mode == "set_goal":
+            clicked_node = self.get_node_at(x, y)
+            if clicked_node is not None:
+                self.goal_node = clicked_node
+                self.draw_graph()
+    
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = GraphTool(root)
+    root.mainloop()
