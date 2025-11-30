@@ -169,30 +169,28 @@
         .result-modal p { margin: 10px 0; font-size: 15px; color: #94a3b8; }
         .result-modal .path { font-weight: 700; color: #06b6d4; font-size: 1.1rem; }
         .back-link {
-            position: fixed;
-            top: 16px;
-            left: 16px;
             color: #94a3b8;
             text-decoration: none;
             font-size: 14px;
             font-weight: 600;
-            padding: 8px 16px;
-            background: rgba(30, 41, 59, 0.8);
+            padding: 10px 16px;
+            background: #1e293b;
             border-radius: 8px;
             border: 1px solid #334155;
             transition: all 0.15s;
-            z-index: 100;
+            margin-right: 8px;
         }
         .back-link:hover {
             color: #06b6d4;
             border-color: #06b6d4;
+            background: #334155;
         }
     </style>
 </head>
 <body>
-    <a href="index.html" class="back-link">← Zurück</a>
     
     <div class="toolbar">
+        <a href="index.html" class="back-link">← Zurück</a>
         <button class="btn active" id="btn-node">Knoten</button>
         <button class="btn" id="btn-edge">Kante</button>
         <button class="btn" id="btn-accident">Unfall</button>
