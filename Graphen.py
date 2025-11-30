@@ -20,6 +20,7 @@ class GraphTool:
         # Graph-Daten
         self.nodes = {}  # {id: (x, y)}
         self.edges = {}  # {(node1, node2): weight}
+        self.manual_accidents = set()  # Manuell platzierte Unfallpunkte (immer sichtbar)
         self.node_counter = 0
         
         # Zustände
@@ -146,15 +147,38 @@ class GraphTool:
         self.acc_density = max(0.0, min(1.0, v))
         self.draw_graph()
 
-    def _acc_indices(self, acc_list):
+    def _acc_indices(self, acc_list, edge_key):
+        """Gibt Indizes der anzuzeigenden Unfallpunkte zurück.
+        Manuell platzierte werden immer angezeigt, zufällige werden gedünnt."""
         m = len(acc_list)
         if m == 0:
             return []
-        p = min(1.0, (self.acc_density) * (3.0 / (m + 1)))
-        show_n = 0 if self.acc_density <= 0 else max(1, int(round(p * m)))
-        if show_n <= 0:
-            return []
-        return [min(m - 1, int(k * m / show_n)) for k in range(show_n)]
+        
+        # Sammle manuell platzierte Indizes für diese Kante
+        manual_indices = set()
+        for (n1, n2, idx) in self.manual_accidents:
+            if (n1, n2) == edge_key and idx < m:
+                manual_indices.add(idx)
+        
+        # Zufällig generierte Unfälle nach Dichte filtern
+        random_indices = [i for i in range(m) if i not in manual_indices]
+        
+        if self.acc_density <= 0:
+            # Nur manuelle anzeigen
+            return list(manual_indices)
+        
+        # Dünne die zufälligen Unfälle
+        r_count = len(random_indices)
+        if r_count > 0:
+            p = min(1.0, (self.acc_density) * (3.0 / (r_count + 1)))
+            show_n = max(1, int(round(p * r_count)))
+            step = max(1, r_count // show_n)
+            filtered_random = [random_indices[min(r_count - 1, k * step)] for k in range(show_n)]
+        else:
+            filtered_random = []
+        
+        # Kombiniere: manuell + gefilterte zufällige
+        return list(manual_indices) + filtered_random
         
     def set_mode(self, mode):
         self.mode = mode
@@ -320,8 +344,11 @@ class GraphTool:
             px, py = x1 + t * dx, y1 + t * dy
         if (node1, node2) in self.edges:
             self.edges[(node1, node2)]['accidents'].append((px, py))
+            # Manuell platzierte Unfallpunkte markieren (immer sichtbar)
+            self.manual_accidents.add((node1, node2, len(self.edges[(node1, node2)]['accidents']) - 1))
         if (node2, node1) in self.edges:
             self.edges[(node2, node1)]['accidents'].append((px, py))
+            self.manual_accidents.add((node2, node1, len(self.edges[(node2, node1)]['accidents']) - 1))
         self.draw_graph()
 
     # Geometrie-Helfer: Kantenkreuzungen verhindern
@@ -464,7 +491,7 @@ class GraphTool:
                 dr.line([(x1 * SCALE, y1 * SCALE), (x2 * SCALE, y2 * SCALE)], fill=col_edge, width=2 * SCALE)
                 # Unfallpunkte (gedünnt) zeichnen
                 acc_list = data['accidents']
-                for idx in self._acc_indices(acc_list):
+                for idx in self._acc_indices(acc_list, (node1, node2)):
                     ax, ay = acc_list[idx]
                     dr.ellipse([(ax - 6) * SCALE, (ay - 6) * SCALE, (ax + 6) * SCALE, (ay + 6) * SCALE], fill="#f87171", outline="#dc2626")
                 mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
@@ -519,7 +546,7 @@ class GraphTool:
                 x2, y2 = self.nodes[node2]
                 self.canvas.create_line(x1, y1, x2, y2, fill="#3d5a80", width=2)
                 acc_list = data['accidents']
-                for idx in self._acc_indices(acc_list):
+                for idx in self._acc_indices(acc_list, (node1, node2)):
                     ax, ay = acc_list[idx]
                     self.canvas.create_oval(ax-6, ay-6, ax+6, ay+6, fill="#f87171", outline="#dc2626")
                 mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
@@ -633,6 +660,7 @@ class GraphTool:
     def clear_all(self):
         self.nodes = {}
         self.edges = {}
+        self.manual_accidents = set()
         self.node_counter = 0
         self.selected_node = None
         self.start_node = None
