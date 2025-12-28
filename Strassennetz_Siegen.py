@@ -331,8 +331,10 @@ edges_gdf['speed_kmh'] = edges_gdf['highway'].apply(lambda h: _default_speed_for
 eps = 1e-6
 edges_gdf['T_sec'] = edges_gdf.apply(lambda r: (r['length_km'] / max(eps, r['speed_kmh'])) * 3600.0, axis=1)
 
-# Risiko R(e) = accidents per km (wie zuvor). Note: kein zusätzliches alpha-Glättung hier (wie gewünscht)
-edges_gdf['R'] = edges_gdf.apply(lambda r: (r['accidents'] / max(eps, r['length_km'])) if r['length_km'] > 0 else 0.0, axis=1)
+# Risiko R(e) = beta(e) * (accidents + alpha) / length_km
+# alpha wird konstant auf 1 gesetzt (Glättung), beta nutzen wir aus 'road_penalty'
+alpha = 1.0
+edges_gdf['R'] = edges_gdf.apply(lambda r: (r['road_penalty'] * (r['accidents'] + alpha) / max(eps, r['length_km'])) if r['length_km'] > 0 else 0.0, axis=1)
 
 # Normiere auf 0..1
 T_max = edges_gdf['T_sec'].max() or 1.0
