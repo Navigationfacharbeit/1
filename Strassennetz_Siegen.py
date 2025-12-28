@@ -294,19 +294,6 @@ edges_gdf["accidents"] = counts.reindex(edges_gdf.index).fillna(0).astype(int)
 alpha = 0.5  # Glättungsfaktor, verhindert Nullwerte bei 0 Unfällen
 edges_gdf["length_km"] = edges_gdf["length"] / 1000.0
 # beta(e) wird aus der highway-Klasse abgeleitet (wie vorher mapping)
-edges_gdf["beta"] = edges_gdf["highway"].apply(highway_penalty_tag)
-edges_gdf["risk"] = edges_gdf.apply(lambda r: r["beta"] * (r["accidents"] + alpha) / max(r["length_km"], 1e-6), axis=1)
-
-# Berechne Fahrzeit T(e) in Sekunden pro Kante aus Länge und Geschwindigkeit (v in km/h)
-def _edge_speed_from_attr(attr, fallback_highway=None):
-    try:
-        return _edge_speed_kmh(attr, fallback_highway=fallback_highway)
-    except Exception:
-        return _default_speed_for_highway(fallback_highway)
-
-edges_gdf["time_sec"] = edges_gdf.apply(lambda r: (r["length_km"] / max(1e-6, _edge_speed_from_attr(r.get("attr", {}), fallback_highway=r.get("highway")))) * 3600.0, axis=1)
-
-# Straßenklassen-Strafe basierend auf OSM 'highway' Tag
 def highway_penalty_tag(h):
     if h is None:
         return 1.2
@@ -329,7 +316,19 @@ def highway_penalty_tag(h):
         'footway': 2.5
     }
     return mapping.get(str(h), 1.2)
+edges_gdf["beta"] = edges_gdf["highway"].apply(highway_penalty_tag)
+edges_gdf["risk"] = edges_gdf.apply(lambda r: r["beta"] * (r["accidents"] + alpha) / max(r["length_km"], 1e-6), axis=1)
 
+# Berechne Fahrzeit T(e) in Sekunden pro Kante aus Länge und Geschwindigkeit (v in km/h)
+def _edge_speed_from_attr(attr, fallback_highway=None):
+    try:
+        return _edge_speed_kmh(attr, fallback_highway=fallback_highway)
+    except Exception:
+        return _default_speed_for_highway(fallback_highway)
+
+edges_gdf["time_sec"] = edges_gdf.apply(lambda r: (r["length_km"] / max(1e-6, _edge_speed_from_attr(r.get("attr", {}), fallback_highway=r.get("highway")))) * 3600.0, axis=1)
+
+# Straßenklassen-Strafe basierend auf OSM 'highway' Tag
 edges_gdf['road_penalty'] = edges_gdf['highway'].apply(highway_penalty_tag)
 
 # Normalisieren
