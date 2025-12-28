@@ -430,7 +430,7 @@ edges_gdf['highway_weight'] = 1.0 + (1.0 - pref) * (1.0 * route_pref_strength)
 # Use per-route AI strength so 'safe' can prioritize main roads more
 ai_strengths = {
     'fast': 1.0,
-    'safe': 4.0,
+    'safe': 8.0,
     'mix': 2.0
 }
 edges_gdf['ai_weight_fast'] = 1.0 + (1.0 - p_main) * ai_strengths['fast']
@@ -439,8 +439,11 @@ edges_gdf['ai_weight_mix'] = 1.0 + (1.0 - p_main) * ai_strengths['mix']
 
 # Finalgewichte: benutze normierte Fahrzeit T_norm anstelle von Länge und das geglättete Risiko
 # Multipliziere zusätzlich mit highway_weight und ai_weight; road_penalty wurde bereits als beta in risk berücksichtigt
+SAFE_RISK_MULTIPLIER = 2.0  # Verstärkt die Priorisierung des Risikos für die 'sichere' Route
+
 edges_gdf["weight_fast"] = edges_gdf["T_norm"] * edges_gdf["highway_weight"] * edges_gdf["ai_weight_fast"]
-edges_gdf["weight_safe"] = edges_gdf["risk_norm"] * edges_gdf["highway_weight"] * edges_gdf["ai_weight_safe"]
+# Für 'safe' das Risiko stärker gewichten (Multiplikator) — so werden Unfallarme Routen bevorzugt
+edges_gdf["weight_safe"] = (edges_gdf["risk_norm"] * SAFE_RISK_MULTIPLIER) * edges_gdf["highway_weight"] * edges_gdf["ai_weight_safe"]
 edges_gdf["weight_mix"] = ((1 - mix_param) * edges_gdf["T_norm"] + mix_param * edges_gdf["risk_norm"]) * edges_gdf["highway_weight"] * edges_gdf["ai_weight_mix"]
 
 # Baue gerichteten Graphen mit minimalen Gewichten pro (u,v)
