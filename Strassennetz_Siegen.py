@@ -278,8 +278,7 @@ for u, v, key, data in G.edges(keys=True, data=True):
     highway = None
     if isinstance(data, dict):
         highway = data.get("highway")
-    # store original edge attributes as well to extract maxspeed later
-    rows.append({"u": u, "v": v, "key": key, "length": length_m, "geometry": geom, "highway": highway, "attr": data if isinstance(data, dict) else {}})
+    rows.append({"u": u, "v": v, "key": key, "length": length_m, "geometry": geom, "highway": highway})
 
 edges_gdf = gpd.GeoDataFrame(rows, crs="EPSG:4326").to_crs(3857)
 
@@ -290,10 +289,10 @@ joined = gpd.sjoin(gdf_acc, buffers[["geometry"]], how="left", predicate="within
 counts = joined.groupby("index_right").size()
 edges_gdf["accidents"] = counts.reindex(edges_gdf.index).fillna(0).astype(int)
 
-# Neues Risiko-Modell: R(e) = beta(e) * (A(e) + alpha) / L(e_km)
-alpha = 0.5  # Glättungsfaktor, verhindert Nullwerte bei 0 Unfällen
-edges_gdf["length_km"] = edges_gdf["length"] / 1000.0
-# beta(e) wird aus der highway-Klasse abgeleitet (wie vorher mapping)
+# Risiko definieren (Unfälle pro km)
+edges_gdf["risk"] = edges_gdf.apply(lambda r: r["accidents"] / (max(r["length"], 1) / 1000.0), axis=1)
+
+# Straßenklassen-Strafe basierend auf OSM 'highway' Tag
 def highway_penalty_tag(h):
     if h is None:
         return 1.2
@@ -316,139 +315,36 @@ def highway_penalty_tag(h):
         'footway': 2.5
     }
     return mapping.get(str(h), 1.2)
-edges_gdf["beta"] = edges_gdf["highway"].apply(highway_penalty_tag)
-edges_gdf["risk"] = edges_gdf.apply(lambda r: r["beta"] * (r["accidents"] + alpha) / max(r["length_km"], 1e-6), axis=1)
 
-# Berechne Fahrzeit T(e) in Sekunden pro Kante aus Länge und Geschwindigkeit (v in km/h)
-def _edge_speed_from_attr(attr, fallback_highway=None):
-    try:
-        return _edge_speed_kmh(attr, fallback_highway=fallback_highway)
-    except Exception:
-        return _default_speed_for_highway(fallback_highway)
-
-edges_gdf["time_sec"] = edges_gdf.apply(lambda r: (r["length_km"] / max(1e-6, _edge_speed_from_attr(r.get("attr", {}), fallback_highway=r.get("highway")))) * 3600.0, axis=1)
-
-# Straßenklassen-Strafe basierend auf OSM 'highway' Tag
 edges_gdf['road_penalty'] = edges_gdf['highway'].apply(highway_penalty_tag)
 
-# Normalisieren
-T_max = edges_gdf["time_sec"].max() or 1.0
-max_risk = edges_gdf["risk"].max() or 1.0
-
-# Normierungen (0..1)
-edges_gdf["T_norm"] = edges_gdf["time_sec"] / T_max
-edges_gdf["risk_norm"] = edges_gdf["risk"] / max_risk
-# len_norm bleibt optional (für Vergleich/debug)
-max_len = edges_gdf["length"].max() or 1.0
-edges_gdf["len_norm"] = edges_gdf["length"] / max_len
-
-# Gewichte – leichte ML-basierte Anpassung zur Bewertung von Straßen (bevorzuge Hauptstraßen)
+# Normalisieren und berechne Fahrzeit (T) sowie Risiko (R)
 mix_param = 0.5
-route_pref_strength = 1.0  # reset manual strength; AI model will handle preference
 
-# Zielwert (wie "bevorzugt" ist die Straße), basierend auf OSM 'highway' tag
-def hw_target(h):
-    if h is None:
-        return np.nan
-    if isinstance(h, (list, tuple)):
-        h = h[0]
-    h = str(h).lower()
-    mapping = {
-        'motorway': 1.0,
-        'trunk': 0.95,
-        'primary': 0.9,
-        'secondary': 0.8,
-        'tertiary': 0.6,
-        'unclassified': 0.4,
-        'residential': 0.2,
-        'service': 0.15,
-        'living_street': 0.1,
-        'track': 0.05,
-        'path': 0.0
-    }
-    return mapping.get(h, 0.3)
+# Länge in km
+edges_gdf['length_km'] = edges_gdf['length'] / 1000.0
 
-edges_gdf['hw_target'] = edges_gdf['highway'].apply(hw_target)
+# Schätze Geschwindigkeit pro Kante über Highway-Typ (Fallback auf Default)
+edges_gdf['speed_kmh'] = edges_gdf['highway'].apply(lambda h: _default_speed_for_highway(h))
 
-# Features: len_norm, risk_norm, accidents, plus highway class encoded
-edges_gdf['hw_code'] = edges_gdf['highway'].apply(lambda h: str(h[0]) if isinstance(h, (list, tuple)) and h else (str(h) if h is not None else 'none'))
-hw_dummies = pd.get_dummies(edges_gdf['hw_code'], prefix='hw')
-X_df = pd.concat([edges_gdf[['len_norm', 'risk_norm', 'accidents']].fillna(0), hw_dummies], axis=1)
-X = X_df.values
-y = edges_gdf['hw_target'].fillna(-1).values
+# Fahrzeit T(e) in Sekunden (vermeidet Division durch 0)
+eps = 1e-6
+edges_gdf['T_sec'] = edges_gdf.apply(lambda r: (r['length_km'] / max(eps, r['speed_kmh'])) * 3600.0, axis=1)
 
-# Train Ridge with CV if enough samples
-mask = y >= 0
-if mask.sum() >= 20:
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X[mask])
-    alphas = [0.1, 1.0, 10.0]
-    model = RidgeCV(alphas=alphas)
-    model.fit(Xs, y[mask])
-    # predict for all
-    Xall = scaler.transform(X)
-    pred = model.predict(Xall)
-    # normalize predictions to 0..1
-    pmin = np.nanmin(pred)
-    pmax = np.nanmax(pred)
-    if pmax - pmin < 1e-6:
-        pref = np.clip(pred, 0.0, 1.0)
-    else:
-        pref = (pred - pmin) / (pmax - pmin)
-else:
-    pref = 1.0 - edges_gdf['risk_norm'].fillna(0).values
+# Risiko R(e) = accidents per km (wie zuvor). Note: kein zusätzliches alpha-Glättung hier (wie gewünscht)
+edges_gdf['R'] = edges_gdf.apply(lambda r: (r['accidents'] / max(eps, r['length_km'])) if r['length_km'] > 0 else 0.0, axis=1)
 
-# Convert preference to highway_weight factor scaled by route_pref_strength
-pref = np.clip(pref, 0.0, 1.0)
+# Normiere auf 0..1
+T_max = edges_gdf['T_sec'].max() or 1.0
+R_max = edges_gdf['R'].max() or 1.0
+edges_gdf['T_norm'] = edges_gdf['T_sec'] / T_max
+edges_gdf['R_norm'] = edges_gdf['R'] / R_max
 
-# --- AI route-decision model: predict per-edge probability that it is a 'main/preferred' road ---
-ai_strength = 2.0  # how strongly the AI penalizes non-preferred edges
-try:
-    # prepare features (reuse X_df created above)
-    scaler_ai = StandardScaler().fit(X)
-    Xs_ai = scaler_ai.transform(X)
-    # binary target derived from hw_target (main roads ~1.0)
-    y_bin = (edges_gdf['hw_target'].fillna(0) >= 0.7).astype(int).values
-    # require at least some examples of each class
-    if (y_bin == 1).sum() >= 10 and (y_bin == 0).sum() >= 10:
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-        clf.fit(Xs_ai[mask], y_bin[mask])
-        p_main = clf.predict_proba(Xs_ai)[:, 1]
-    else:
-        # fallback: use continuous pref (from Ridge) as proxy
-        p_main = pref
-except Exception:
-    p_main = pref
-
-# convert to preference probability (p_main in 0..1)
-p_main = np.clip(p_main, 0.0, 1.0)
-edges_gdf['ai_pref'] = p_main
-
-# highway weight from previous Ridge prediction (kept for class-based preference)
-edges_gdf['highway_weight'] = 1.0 + (1.0 - pref) * (1.0 * route_pref_strength)
-
-# Use per-route AI strength so 'safe' can prioritize main roads more
-ai_strengths = {
-    'fast': 1.0,
-    'safe': 4.0,
-    'mix': 2.0
-}
-edges_gdf['ai_weight_fast'] = 1.0 + (1.0 - p_main) * ai_strengths['fast']
-edges_gdf['ai_weight_safe'] = 1.0 + (1.0 - p_main) * ai_strengths['safe']
-edges_gdf['ai_weight_mix'] = 1.0 + (1.0 - p_main) * ai_strengths['mix']
-
-# Finalgewichte: Verwende exakt das in der Arbeit beschriebene Modell
-# W_lambda(e) = (1 - lambda) * T_norm(e) + lambda * R_norm(e)
-# lambda bestimmt die Gewichtung zwischen Fahrzeit und Risiko.
-lambda_vals = {
-    'fast': 0.0,      # nur Fahrzeit
-    'safe': 1.0,      # nur Risiko
-    'mix': mix_param  # Mischung wie oben
-}
-
-edges_gdf["weight_fast"] = (1.0 - lambda_vals['fast']) * edges_gdf["T_norm"] + lambda_vals['fast'] * edges_gdf["risk_norm"]
-edges_gdf["weight_safe"] = (1.0 - lambda_vals['safe']) * edges_gdf["T_norm"] + lambda_vals['safe'] * edges_gdf["risk_norm"]
-edges_gdf["weight_mix"] = (1.0 - lambda_vals['mix']) * edges_gdf["T_norm"] + lambda_vals['mix'] * edges_gdf["risk_norm"]
+# Final: Verwende exakt W_lambda (keine multiplicativen AI/highway Faktoren)
+# Varianten: fast (lambda=0 -> nur T_norm), safe (lambda=1 -> nur R_norm), mix (lambda=mix_param)
+edges_gdf['weight_fast'] = edges_gdf['T_norm']
+edges_gdf['weight_safe'] = edges_gdf['R_norm']
+edges_gdf['weight_mix'] = (1.0 - mix_param) * edges_gdf['T_norm'] + mix_param * edges_gdf['R_norm']
 
 # Baue gerichteten Graphen mit minimalen Gewichten pro (u,v)
 H = nx.DiGraph()
