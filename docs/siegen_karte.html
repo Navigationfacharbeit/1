@@ -3,8 +3,37 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Straßennetz Siegen – Wilnsdorf → Siegen</title>
+    <style>
+        html, body { height: 100%; margin: 0; }
+        body { display: flex; flex-direction: column; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+        header { padding: 10px 14px; background: #0f172a; color: #7dd3fc; font-weight: 600; }
+        main { flex: 1; }
+        iframe { width: 100%; height: 100%; border: 0; }
+        footer { padding: 8px 14px; background: #0f172a; color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+        a { color: #38bdf8; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header>
+        Straßennetz Siegen – Karte (Wilnsdorf → Siegen)
+    </header>
+    <main>
+        <iframe src="route_wilnsdorf_siegen.html" title="Karte Wilnsdorf → Siegen"></iframe>
+    </main>
+    <footer>
+        Fallback-Link: <a href="route_wilnsdorf_siegen.html">Karte öffnen</a>
+    </footer>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Siegen Karte – Weiterleitung</title>
-    <meta http-equiv="refresh" content="0; url=../route_wilnsdorf_siegen.html" />
+    <meta http-equiv="refresh" content="0; url=./route_wilnsdorf_siegen.html" />
     <style>
         body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 2rem; text-align: center; color: #0f172a; }
         a { color: #0ea5e9; text-decoration: none; }
@@ -12,11 +41,11 @@
     </style>
 </head>
 <body>
-    <p>Weiterleitung zur aktuellen Karte: <a href="../route_wilnsdorf_siegen.html">Wilnsdorf → Siegen</a></p>
+    <p>Weiterleitung zur aktuellen Karte: <a href="./route_wilnsdorf_siegen.html">Wilnsdorf → Siegen</a></p>
     <p>Falls die automatische Weiterleitung nicht funktioniert, klicke auf den Link.</p>
     <script>
         // Fallback JS-Redirect
-        window.location.replace("../route_wilnsdorf_siegen.html");
+        window.location.replace("./route_wilnsdorf_siegen.html");
     </script>
 </body>
 </html>

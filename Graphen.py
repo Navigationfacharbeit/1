@@ -635,13 +635,14 @@ class GraphTool:
                     current = previous[current]
             return path, distances[self.goal_node]
 
-        # Modell mit Normierung: W_λ(e) = (1-λ)·T_norm(e) + λ·R_norm(e)
+        # Einfaches Modell: W_λ(e) = (1-λ)·T(e) + λ·R(e)
+        # Ohne Normierung, nur mit direkten Werten
         alpha = 0.1
         road_penalty = 1.0
-
-        # Lambda von 0 bis 1 (mix kannst du nach Bedarf anpassen)
-        route_lambdas = {"fast": 0.0, "mix": 0.12, "safe": 1.0}
-
+        
+        # Lambda von 0 bis 1
+        route_lambdas = {"fast": 0.0, "mix": 0.3, "safe": 1.0}
+        
         def edge_length(d):
             try:
                 L = float(d.get('weight', 1.0))
@@ -649,24 +650,14 @@ class GraphTool:
                 L = 1.0
             return max(0.1, L)
 
-        # Vorab Maxima für Normierung bestimmen
-        all_lengths = [edge_length(d) for d in self.edges.values()] or [1.0]
-        max_T = max(all_lengths) if all_lengths else 1.0
-        all_R_raw = []
-        for d in self.edges.values():
-            A = len(d.get('accidents', []))
-            all_R_raw.append((A + alpha) * road_penalty)
-        max_R = max(all_R_raw) if all_R_raw and max(all_R_raw) > 0 else 1.0
-
         def make_cost(route_key):
             lam = route_lambdas.get(route_key, 0.5)
             def cost(d):
                 T = edge_length(d)
                 A = len(d['accidents'])
                 R = (A + alpha) * road_penalty
-                T_norm = T / max_T if max_T > 0 else 0.0
-                R_norm = R / max_R if max_R > 0 else 0.0
-                return (1.0 - lam) * T_norm + lam * R_norm
+                # W = (1-λ)·T + λ·R
+                return (1.0 - lam) * T + lam * R
             return cost
 
         path_fast, dist_fast = dijkstra(make_cost('fast'))
@@ -677,7 +668,7 @@ class GraphTool:
         self.path_safe = path_safe
         self.path_mix = path_mix
 
-        # Helper to compute summary metrics along a path (mit Normierung)
+        # Helper to compute summary metrics along a path
         def summarize_path(path, route_key):
             if not path or len(path) < 2:
                 return {"sum_T": 0.0, "sum_R": 0.0, "sum_W": 0.0, "sum_A": 0}
@@ -694,9 +685,7 @@ class GraphTool:
                 L = edge_length(d)
                 A = len(d.get('accidents', []))
                 R_raw = (A + alpha) * road_penalty
-                T_norm = L / max_T if max_T > 0 else 0.0
-                R_norm = R_raw / max_R if max_R > 0 else 0.0
-                W = (1.0 - lam) * T_norm + lam * R_norm
+                W = (1.0 - lam) * L + lam * R_raw
                 sum_T += L
                 sum_R += R_raw
                 sum_W += W
