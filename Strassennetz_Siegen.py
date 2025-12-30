@@ -366,7 +366,7 @@ def highway_penalty_tag(h):
 edges_gdf['road_penalty'] = edges_gdf['highway'].apply(highway_penalty_tag)
 
 # Normalisieren und berechne Fahrzeit (T) sowie Risiko (R)
-mix_param = 0.115
+mix_param = 0.2
 
 # Länge in km
 edges_gdf['length_km'] = edges_gdf['length'] / 1000.0
