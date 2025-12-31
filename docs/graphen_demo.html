@@ -475,15 +475,16 @@ function calculatePath() {
     if (startNode === null || goalNode === null) { alert('Bitte Start- und Zielpunkt setzen!'); return; }
     
     const routeType = document.querySelector('input[name="route"]:checked').value;
-    const allW = Object.values(edges).map(e => e.weight);
-    const allA = Object.values(edges).map(e => e.accidents.length);
-    const wMax = Math.max(...allW, 1), aMax = Math.max(...allA, 1);
-    
+    // Kostenmodell analog Python: W = (1-λ) * Gewicht + λ * (Unfälle + α)
+    const alpha = 0.1;
+    const routeLambda = { fast: 0.0, mix: 0.45, safe: 1.0 };
+
     function costFunc(edge) {
-        const wNorm = edge.weight / wMax, aNorm = edge.accidents.length / aMax;
-        if (routeType === 'fast') return 0.9 * wNorm + 0.1 * aNorm;
-        if (routeType === 'safe') return edge.accidents.length;
-        return 0.55 * wNorm + 0.45 * aNorm;
+        const w = edge.weight;
+        const a = edge.accidents.length;
+        const lam = routeLambda[routeType] ?? 0.45;
+        if (routeType === 'safe') return a + alpha; // direkt Unfälle bevorzugen
+        return (1 - lam) * w + lam * (a + alpha);
     }
     
     const dist = {}, prev = {};
