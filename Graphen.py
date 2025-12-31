@@ -214,10 +214,10 @@ class GraphTool:
             self.edges[(node2, node1)] = {'weight': w, 'accidents': []}  # Bidirektional
             self.draw_graph()
 
-    def generate_random_graph(self, n_nodes: int = 20, extra_edges: int = 12):
+    def generate_random_graph(self, n_nodes: int = 10, extra_edges: int = 4):
         """Erzeugt ein größeres verbundenes Zufalls-Straßennetz.
         - n_nodes: Anzahl Knoten
-        - Jeder Kante bekommt Gewicht 1–10 und 3–15 Unfälle (als Punkte auf der Kante)
+        - Jeder Kante bekommt Gewicht 1–10 und 1–8 Unfälle (als Punkte auf der Kante)
         """
         # Canvas-Größe ermitteln
         self.root.update_idletasks()
