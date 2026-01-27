@@ -37,7 +37,11 @@
 <body>
     <a href="index.html" id="back-button-overlay">Zurück</a>
     <main>
-        <iframe src="route_wilnsdorf_siegen.html" title="Karte Wilnsdorf → Siegen"></iframe>
+        <iframe id="map-iframe" title="Karte Wilnsdorf → Siegen"></iframe>
     </main>
+    <script>
+        // Cache-Busting für die iframe-URL
+        document.getElementById('map-iframe').src = 'route_wilnsdorf_siegen.html?t=' + new Date().getTime();
+    </script>
 </body>
 </html>
