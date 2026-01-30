@@ -570,24 +570,37 @@ selected_acc = gdf_acc_plot[gdf_acc_plot.geometry.within(outer_buffer)].copy()
 
 # Farbe pro Jahr (Palette vermeidet Route-Farben)
 palette = ['#ff7f00', '#984ea3', '#f781bf', '#a65628', '#ffd92f', '#999999', '#00ced1', '#8dd3c7', '#bebada']
-years = []
-if 'UJAHR' in selected_acc.columns:
-    years = sorted([int(y) for y in selected_acc['UJAHR'].dropna().unique()])
+
+# Sammle ALLE Jahre aus df_acc (nicht nur selected_acc) — so dass 2021 auch ohne Unfälle gezeigt wird
+all_years = []
+if 'UJAHR' in df_acc.columns:
+    all_years = sorted([int(y) for y in df_acc['UJAHR'].dropna().unique()])
 else:
-    years = []
+    all_years = []
+
+# Füge 2021 hinzu falls nicht vorhanden (optisch Vollständigkeit)
+if 2021 not in all_years:
+    all_years = sorted(all_years + [2021])
+
+# Jahre, die tatsächlich in der Kartenregion vorhanden sind
+years_in_map = []
+if 'UJAHR' in selected_acc.columns:
+    years_in_map = sorted([int(y) for y in selected_acc['UJAHR'].dropna().unique()])
+else:
+    years_in_map = []
 
 # Spezielle Farben: vier gewünschte Hex-Farben für die vier jüngsten Jahre
 # Reihenfolge (jüngstes Jahr zuerst): #05186A, #ac8613, #0cdad3, #B636B6
 special_colors = ["#05186A", "#ac8613", "#0cdad3", "#B636B6"]
 year_to_color = {}
-if years:
+if all_years:
     # ordne die jüngsten Jahre zuerst den special_colors zu
-    recent = sorted(years, reverse=True)
+    recent = sorted(all_years, reverse=True)
     for i, y in enumerate(recent):
         if i < len(special_colors):
             year_to_color[y] = special_colors[i]
     # ältere Jahre bekommen Farben aus der Palette (cyclic)
-    older = [y for y in years if y not in year_to_color]
+    older = [y for y in all_years if y not in year_to_color]
     for i, y in enumerate(sorted(older)):
         year_to_color[y] = palette[i % len(palette)]
 
@@ -648,7 +661,7 @@ for _, acc in selected_acc.iterrows():
 # Kleine Legende für Jahresfarben
 from branca.element import Html
 legend_items = []
-for y in years:
+for y in all_years:
     legend_items.append(f"<div><span style='display:inline-block;width:14px;height:12px;background:{year_to_color[y]};margin-right:6px;'></span>{y}</div>")
 legend_html = """
 <div style='position: fixed; bottom: 50px; left: 10px; z-index:9999; background: white; padding: 8px; border:1px solid #ccc; font-size:12px;'>
